@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="light" />
+<title>Intención</title>
+<meta name="description" content="Ningún proyecto nace de un problema. Nace de una intención." />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap" />
+<link rel="stylesheet" href="./styles.css" />
+
+<!-- Los módulos ES no cargan desde file://. Guardia en script clásico para poder avisarlo. -->
+<script>if (location.protocol === 'file:') document.documentElement.classList.add('is-file');</script>
+
+<script type="importmap">
+{ "imports": { "three": "./vendor/three/three.module.min.js" } }
+</script>
+</head>
+<body>
+
+<div class="stage">
+  <!-- Capa 1: tipografía (queda DEBAJO del canvas para que el avión pase por delante) -->
+  <p id="phrase" class="phrase"></p>
+
+  <!-- Capa 2: escena 3D, transparente sobre el blanco -->
+  <canvas id="gl" class="gl" aria-hidden="true"></canvas>
+
+  <!-- Capa 3: menú -->
+  <main id="menu" class="menu" hidden>
+    <form id="intent-form" class="intent" novalidate>
+      <h1 class="intent__title reveal">¿Cuál es tu <em>intención</em> hoy?</h1>
+
+      <div class="field reveal">
+        <label class="sr-only" for="intent-input">Escribe tu intención</label>
+        <input id="intent-input" class="field__input" type="text" name="intent"
+               placeholder="Escríbela aquí…" autocomplete="off" autocapitalize="sentences"
+               spellcheck="false" maxlength="180" />
+        <span class="field__rule" aria-hidden="true"></span>
+
+        <button id="send" class="send" type="submit" aria-label="Enviar intención">
+          <svg class="send__ori" viewBox="0 0 44 44" aria-hidden="true" focusable="false">
+            <g class="ori">
+              <path class="ori__f ori__f1" d="M22 3 L38.5 26 L22 20.5 Z" />
+              <path class="ori__f ori__f2" d="M22 3 L22 20.5 L6.5 30 Z" />
+              <path class="ori__f ori__f3" d="M22 20.5 L38.5 26 L27.5 41 Z" />
+              <path class="ori__f ori__f4" d="M22 20.5 L27.5 41 L14 36 Z" />
+              <path class="ori__f ori__f5" d="M22 20.5 L14 36 L6.5 30 Z" />
+            </g>
+          </svg>
+        </button>
+      </div>
+
+      <p id="intent-status" class="status" role="status" aria-live="polite"></p>
+    </form>
+  </main>
+</div>
+
+<div id="flash" class="flash" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
+
+<button id="skip" class="skip" type="button">Saltar intro</button>
+
+<div class="file-warning">
+  <p><strong>Ábrelo con un servidor local.</strong></p>
+  <p>Los módulos de JavaScript no funcionan con <code>file://</code>. Desde esta carpeta:</p>
+  <p><code>npx serve .</code> &nbsp;o&nbsp; <code>python -m http.server 5173</code></p>
+  <p>En VS Code también sirve la extensión <em>Live Server</em>.</p>
+</div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>

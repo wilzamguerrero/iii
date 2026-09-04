@@ -1,0 +1,404 @@
+/* ============================================================
+   Intención — hoja de estilos
+   Página en blanco. Todo el peso visual lo llevan el movimiento
+   y la tipografía.
+   ============================================================ */
+
+:root {
+  --paper: #ffffff;
+  --ink: #14171c;
+  --ink-soft: #5b636e;
+  --ink-faint: rgba(20, 23, 28, 0.18);
+  --ink-line: rgba(20, 23, 28, 0.14);
+
+  --sans: "Segoe UI Variable Display", "Segoe UI", Inter, -apple-system,
+          BlinkMacSystemFont, system-ui, "Helvetica Neue", Arial, sans-serif;
+  --serif: "Instrument Serif", "Iowan Old Style", "Palatino Linotype", Palatino,
+           Georgia, "Times New Roman", serif;
+
+  /* Curvas propias: nada de ease por defecto. */
+  --out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --in-out: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body { overflow: hidden; }
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+
+/* ---------- escenario ---------- */
+
+.stage { position: fixed; inset: 0; }
+
+.gl {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  z-index: 2;
+  display: block;
+  pointer-events: none;
+}
+
+/* ---------- la frase ---------- */
+
+.phrase {
+  position: absolute;
+  z-index: 1;                 /* debajo del canvas: el avión pasa por delante */
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(1040px, 88vw);
+  margin: 0;
+  text-align: center;
+  font-weight: 250;
+  font-size: clamp(1.75rem, 5vw, 4.15rem);
+  line-height: 1.14;
+  letter-spacing: -0.022em;
+  color: var(--ink);
+  pointer-events: none;
+}
+
+.phrase .line { display: block; }
+.phrase .line--2 { margin-top: 0.24em; }
+
+.phrase .line--1 { color: var(--ink-soft); font-weight: 200; }
+.phrase .line--2 { color: var(--ink); font-weight: 300; }
+
+.phrase em {
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+/* Revelado por cortina: la máscara recorta, la palabra sube. */
+.w-mask {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: bottom;
+  /* Caja visible algo mayor que la de maquetación: los acentos y las
+     itálicas no se recortan y la cortina sigue funcionando. */
+  padding: 0.06em 0.04em;
+  margin: -0.06em -0.04em;
+}
+
+.w {
+  display: inline-block;
+  transform: translate3d(0, 122%, 0);
+  transition:
+    transform 1.15s var(--out-expo),
+    opacity 0.9s var(--out-quart);
+  opacity: 0;
+  will-change: transform;
+}
+
+.phrase.is-in .w { transform: translate3d(0, 0, 0); opacity: 1; }
+.phrase.is-open .w-mask { overflow: visible; }
+
+/* Estado libre: las palabras se despegan y las mueve el motor de físicas. */
+.phrase.is-loose { }
+.phrase.is-loose .w-mask {
+  position: absolute;
+  overflow: visible;
+  margin: 0;
+  will-change: transform, opacity, filter;
+}
+.phrase.is-loose .w { transition: none; }
+
+.phrase.is-gone { opacity: 0; transition: opacity 0.5s var(--in-out); }
+
+/* ---------- menú ---------- */
+
+.menu {
+  position: absolute; inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  padding: 6vh 6vw;
+}
+
+.intent {
+  width: min(620px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.intent__title {
+  margin: 0 0 clamp(1.6rem, 4vh, 2.9rem);
+  font-weight: 250;
+  font-size: clamp(1.35rem, 3.1vw, 2.35rem);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  text-align: center;
+  color: var(--ink);
+}
+
+.intent__title em {
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 400;
+}
+
+/* Entrada escalonada del menú */
+.menu .reveal {
+  opacity: 0;
+  transform: translate3d(0, 14px, 0);
+  transition: opacity 0.9s var(--out-quart), transform 1.05s var(--out-expo);
+}
+.menu.is-in .reveal { opacity: 1; transform: none; }
+.menu.is-in .reveal:nth-child(1) { transition-delay: 0.06s; }
+.menu.is-in .reveal:nth-child(2) { transition-delay: 0.18s; }
+.menu.is-in .reveal:nth-child(3) { transition-delay: 0.30s; }
+
+/* ---------- campo de texto ---------- */
+
+.field {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--ink-line);
+}
+
+.field__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: clamp(1rem, 1.6vw, 1.2rem);
+  font-weight: 300;
+  letter-spacing: -0.01em;
+  padding: 0.95rem 0.25rem 0.95rem 0;
+  caret-color: var(--ink);
+}
+.field__input::placeholder { color: rgba(20, 23, 28, 0.3); font-weight: 250; }
+.field__input:focus { outline: none; }
+
+/* La línea que se dibuja al enfocar */
+.field__rule {
+  position: absolute;
+  left: 0; right: 0; bottom: -1px;
+  height: 1px;
+  background: var(--ink);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 0.75s var(--out-expo);
+}
+.field:focus-within .field__rule { transform: scaleX(1); }
+
+/* ---------- botón origami ---------- */
+
+.send {
+  flex: 0 0 auto;
+  width: 54px; height: 54px;
+  display: grid; place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.send__ori { width: 34px; height: 34px; overflow: visible; }
+
+.ori {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  transform: rotate(0deg);
+  transition: transform 0.7s var(--out-expo);
+}
+
+.ori__f {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  transition: transform 0.65s var(--out-expo), opacity 0.4s var(--in-out);
+}
+
+/* Grises escalonados: cada cara es un pliegue con otra incidencia de luz. */
+.ori__f1 { fill: #232b35; }
+.ori__f2 { fill: #4e5a68; }
+.ori__f3 { fill: #333d49; }
+.ori__f4 { fill: #7d8896; }
+.ori__f5 { fill: #a8b2bd; }
+
+/* Al pasar por encima, el papel se abre un poco. */
+.send:hover .ori,
+.send:focus-visible .ori { transform: rotate(-9deg) translateY(-2px) scale(1.06); }
+.send:hover .ori__f1 { transform: translate(1.1px, -1.4px); }
+.send:hover .ori__f2 { transform: translate(-1.5px, -0.9px); }
+.send:hover .ori__f3 { transform: translate(1.4px, 1.1px); }
+.send:hover .ori__f4 { transform: translate(0.2px, 1.7px); }
+.send:hover .ori__f5 { transform: translate(-1.6px, 1.2px); }
+
+.send:active .ori { transform: rotate(-4deg) scale(0.93); transition-duration: 0.12s; }
+
+.send:focus-visible {
+  outline: 1.5px solid var(--ink);
+  outline-offset: 3px;
+}
+
+/* Despegue al enviar */
+.send.is-flying .ori {
+  animation: ori-away 0.72s cubic-bezier(0.3, 0, 0.7, 0.2) forwards;
+}
+.send.is-folding .ori {
+  animation: ori-fold 0.85s var(--out-expo) forwards;
+}
+
+@keyframes ori-away {
+  0%   { transform: rotate(-9deg) translate(0, 0) scale(1.06); opacity: 1; }
+  22%  { transform: rotate(-16deg) translate(-3px, 3px) scale(0.96); opacity: 1; }
+  100% { transform: rotate(24deg) translate(120px, -108px) scale(0.42); opacity: 0; }
+}
+
+@keyframes ori-fold {
+  0%   { transform: rotate(-30deg) translate(-26px, 20px) scale(0.5); opacity: 0; }
+  60%  { opacity: 1; }
+  100% { transform: rotate(0deg) translate(0, 0) scale(1); opacity: 1; }
+}
+
+.status {
+  margin: 1.15rem 0 0;
+  min-height: 1.35em;
+  font-size: 0.82rem;
+  font-weight: 300;
+  letter-spacing: 0.035em;
+  color: var(--ink-soft);
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.5s var(--out-quart), transform 0.6s var(--out-expo);
+}
+.status.is-on { opacity: 1; transform: none; }
+
+/* Campo vacío: una sacudida corta, sin colores de error. */
+.field.is-nudge { animation: nudge 0.42s cubic-bezier(0.36, 0.07, 0.19, 0.97); }
+
+@keyframes nudge {
+  0%, 100% { transform: translateX(0); }
+  22% { transform: translateX(-6px); }
+  46% { transform: translateX(5px); }
+  70% { transform: translateX(-3px); }
+  88% { transform: translateX(1.5px); }
+}
+
+/* ---------- fundido blanco de transición ---------- */
+
+.flash {
+  position: fixed; inset: 0;
+  z-index: 4;
+  background: var(--paper);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ---------- grano y viñeta (muy leves, dan cuerpo al blanco) ---------- */
+
+.grain {
+  position: fixed; inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  opacity: 0.05;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.grain::after {
+  content: "";
+  position: absolute; inset: 0;
+  background: radial-gradient(120% 95% at 50% 45%,
+              rgba(20, 23, 28, 0) 52%, rgba(20, 23, 28, 0.055) 100%);
+}
+
+/* ---------- saltar intro ---------- */
+
+.skip {
+  position: fixed;
+  right: clamp(1rem, 3vw, 2.25rem);
+  bottom: clamp(1rem, 3vh, 2rem);
+  z-index: 6;
+  border: 0;
+  background: transparent;
+  padding: 0.55rem 0.2rem;
+  color: var(--ink-soft);
+  font-family: inherit;
+  font-size: 0.68rem;
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.8s var(--out-quart), color 0.3s ease;
+}
+.skip.is-on { opacity: 0.65; }
+.skip.is-on:hover, .skip:focus-visible { opacity: 1; color: var(--ink); }
+.skip:focus-visible { outline: 1.5px solid var(--ink); outline-offset: 2px; }
+.skip.is-off { opacity: 0; pointer-events: none; }
+
+/* ---------- aviso file:// ---------- */
+
+.file-warning { display: none; }
+.is-file .file-warning {
+  display: block;
+  position: fixed; inset: 0;
+  z-index: 20;
+  background: var(--paper);
+  padding: clamp(2rem, 12vh, 8rem) clamp(1.5rem, 8vw, 6rem);
+  font-size: 0.95rem;
+  font-weight: 300;
+  line-height: 1.75;
+  color: var(--ink);
+}
+.file-warning code {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 0.86em;
+  background: rgba(20, 23, 28, 0.06);
+  padding: 0.15em 0.45em;
+  border-radius: 3px;
+}
+.is-file .stage, .is-file .skip, .is-file .grain { display: none; }
+
+/* ---------- vertical / pantallas pequeñas ---------- */
+
+@media (max-aspect-ratio: 3/4) {
+  .phrase { width: 90vw; font-size: clamp(1.6rem, 8.2vw, 3rem); }
+}
+
+@media (max-width: 520px) {
+  .phrase { letter-spacing: -0.015em; }
+  .intent__title { font-size: 1.3rem; }
+  .send { width: 44px; height: 44px; }
+}
+
+/* ---------- movimiento reducido ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .w {
+    transition: opacity 0.6s linear;
+    transform: none;
+  }
+  .phrase.is-in .w { transform: none; }
+  .ori, .ori__f { transition-duration: 0.001s; }
+  .send.is-flying .ori, .send.is-folding .ori { animation: none; }
+  .menu .reveal { transition: opacity 0.5s linear; transform: none; }
+}
