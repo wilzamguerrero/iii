@@ -85,7 +85,7 @@ function pickCustom(value: unknown): CustomProvider[] {
   const seen = new Set<string>();
   for (const raw of value) {
     if (typeof raw !== "object" || raw === null) continue;
-    const { id, label, baseUrl, registry, keyHeader, headers } = raw as Record<string, unknown>;
+    const { id, label, baseUrl, registry, keyHeader, headers, format } = raw as Record<string, unknown>;
     if (typeof id !== "string" || !isCustom(id) || !isProvider(id) || seen.has(id)) continue;
     if (typeof baseUrl !== "string" || !baseUrl.trim()) continue;
     seen.add(id);
@@ -98,6 +98,7 @@ function pickCustom(value: unknown): CustomProvider[] {
     if (typeof keyHeader === "string" && HEADER_NAME.test(keyHeader)) entry.keyHeader = keyHeader;
     const extra = pickHeaders(headers);
     if (Object.keys(extra).length > 0) entry.headers = extra;
+    if (format === "anthropic") entry.format = "anthropic";
     out.push(entry);
   }
   return out;
@@ -213,6 +214,8 @@ export interface NewProvider {
   keyHeader?: string;
   /** Cabeceras extra que pide esa API. */
   headers?: Record<string, string>;
+  /** `anthropic` para las APIs que sólo sirven `/messages`. */
+  format?: "openai" | "anthropic";
 }
 
 /**
@@ -236,6 +239,7 @@ export function addCustomProvider(entry: NewProvider): string {
   if (entry.registry) provider.registry = entry.registry;
   if (entry.keyHeader) provider.keyHeader = entry.keyHeader;
   if (entry.headers && Object.keys(entry.headers).length > 0) provider.headers = entry.headers;
+  if (entry.format === "anthropic") provider.format = "anthropic";
 
   aiConfig.set((current) => ({ ...current, custom: [...current.custom, provider], provider: id }));
   return id;
@@ -251,6 +255,7 @@ export function updateCustomProvider(id: string, patch: Partial<NewProvider>): v
       ...(patch.registry !== undefined ? { registry: patch.registry } : {}),
       ...(patch.keyHeader !== undefined ? { keyHeader: patch.keyHeader } : {}),
       ...(patch.headers !== undefined ? { headers: patch.headers } : {}),
+      ...(patch.format !== undefined ? { format: patch.format } : {}),
     }),
   }));
 }

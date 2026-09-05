@@ -105,6 +105,13 @@ export const PROVIDERS: Readonly<Record<BuiltinId, ProviderSpec>> = {
   },
 };
 
+/**
+ * Anthropic exige decir contra qué versión de su API se habla. Se fija aquí en vez
+ * de dejarla al proveedor: sin ella la petición es un 400, y la que elija cada
+ * pasarela por defecto no tiene por qué ser la que este código espera.
+ */
+const ANTHROPIC_VERSION = "2023-06-01";
+
 /** Lo que hace falta para hablar con un destino, sea de casa o de la persona. */
 export interface Target {
   /** `"custom"` en los proveedores propios; el mapeador de modelos lo mira. */
@@ -127,6 +134,12 @@ export interface Target {
   keyHeader: string;
   /** Cabeceras que pidió la persona. Sólo en los proveedores propios. */
   extra?: Readonly<Record<string, string>>;
+  /**
+   * Qué formato habla el destino. `openai` es el de los tres de casa y el de casi
+   * todas las pasarelas; `anthropic` es `/v1/messages`, con otro cuerpo y otro
+   * flujo, que `_anthropic.ts` traduce en los dos sentidos.
+   */
+  format: "openai" | "anthropic";
 }
 
 export type TargetResult =
@@ -208,7 +221,7 @@ export function safeBase(raw: unknown, policy: BasePolicy): { base: string } | {
   // en la documentación de cada API.
   const text = raw.trim()
     .replace(/\/+$/, "")
-    .replace(/\/chat\/completions$/i, "")
+    .replace(/\/(?:chat\/completions|messages)$/i, "")
     .replace(/\/+$/, "");
 
   let url: URL;
@@ -231,7 +244,11 @@ export function safeBase(raw: unknown, policy: BasePolicy): { base: string } | {
     return { error: "Esa dirección es de una red interna y este servidor no la permite." };
   }
 
-  return { base: url.origin + url.pathname.replace(/\/+$/, "") };
+  // Una URL sin ruta —`https://api.ejemplo.com`, que es como la documentan las que
+  // siguen a Anthropic— se completa con `/v1`: es la ruta de todas, y sin ella la
+  // petición se iría a la raíz del dominio. Si trae ruta, se respeta la que trae.
+  const path = url.pathname.replace(/\/+$/, "");
+  return { base: url.origin + (path || "/v1") };
 }
 
 /** Nombre para los mensajes de error. Nunca lleva la clave ni la ruta completa. */
@@ -348,6 +365,11 @@ export function safeHeaders(raw: unknown): { headers: Record<string, string> } |
  * propio puede pedir otra cabecera, y entonces la clave va ahí a secas: quien
  * pide `api-key` no espera un `Bearer` delante.
  */
+/**
+ * La clave, en la cabecera que toque. `Authorization: Bearer` es lo normal;
+ * `api-key` lo pide Azure y `x-api-key` Anthropic, y ahí no hay negociación
+ * posible: una API que lee una no lee la otra.
+ */
 export function authHeaders(key: string | null, target: Target): Record<string, string> {
   if (!key) return {};
   if (target.keyHeader) return { [target.keyHeader]: key };
@@ -383,13 +405,16 @@ export function readTarget(req: ApiRequest, provider: unknown): TargetResult {
     const extra = safeHeaders(header(req, "x-ai-headers"));
     if ("error" in extra) return { ok: false, code: "bad_headers", message: extra.error };
 
+    const anthropic = header(req, "x-ai-format").toLowerCase() === "anthropic";
     const hint = header(req, "x-ai-registry");
     return {
       ok: true,
       target: {
         id: "custom",
         label: baseLabel(checked.base),
-        chatUrls: [`${checked.base}/chat/completions`],
+        // Los dos formatos viven en rutas distintas de la misma base. La lista de
+        // modelos está en `/models` en los dos.
+        chatUrls: [`${checked.base}/${anthropic ? "messages" : "chat/completions"}`],
         modelUrls: [`${checked.base}/models`],
         // Sin modelo elegido no se inventa ninguno: en un proveedor propio no hay
         // forma de acertar, y mandar uno que no existe da un error confuso.
@@ -398,7 +423,12 @@ export function readTarget(req: ApiRequest, provider: unknown): TargetResult {
         registry: REGISTRY_ID.test(hint) ? hint : "",
         base: checked.base,
         custom: true,
-        keyHeader: named.name,
+        format: anthropic ? "anthropic" : "openai",
+        // Anthropic lee la clave en `x-api-key`, no en `Authorization`. Se pone
+        // de oficio para que elegir el formato baste; si la persona nombró otra
+        // cabecera, manda la suya.
+        keyHeader: named.name || (anthropic ? "x-api-key" : ""),
+        ...(anthropic ? { headers: { "anthropic-version": ANTHROPIC_VERSION } } : {}),
         ...(Object.keys(extra.headers).length > 0 ? { extra: extra.headers } : {}),
       },
     };
@@ -425,6 +455,7 @@ export function readTarget(req: ApiRequest, provider: unknown): TargetResult {
       registry: spec.registry,
       base: "",
       custom: false,
+      format: "openai",
       keyHeader: "",
     },
   };
@@ -568,6 +599,12 @@ export function explainBody(
   label: string,
   contentType: string | null,
   text: string,
+  /**
+   * Cierto cuando ese destino es propio y habla el formato de OpenAI: entonces el
+   * bloqueo tiene una salida concreta que merece decirse, porque es exactamente el
+   * caso que se vivió —403 en `/chat/completions`, 200 en `/messages`—.
+   */
+  offerAnthropic = false,
 ): string | null {
   if ((contentType ?? "").includes("json")) return null;
   try {
@@ -577,10 +614,14 @@ export function explainBody(
 
   const blocked = /Attention Required|cf-error|Cloudflare Ray ID|have been blocked/i.test(text);
   if (blocked) {
+    const salida = offerAnthropic
+      ? "Si su catálogo de modelos sí carga, lo cerrado es sólo este camino: prueba el " +
+        "formato Anthropic en los ajustes de ese proveedor. Si tampoco, lo abre quien " +
+        "administra la pasarela."
+      : "Si el catálogo de modelos sí carga, lo que está cerrado es sólo el camino del " +
+        "chat, y eso lo abre quien administra esa pasarela.";
     return `${label} devolvió ${status}: su cortafuegos (Cloudflare) bloqueó la petición ` +
-      "antes de que llegara a la API. No es la clave ni el modelo. Si el catálogo de " +
-      "modelos sí carga, lo que está cerrado es sólo el camino del chat, y eso lo abre " +
-      "quien administra esa pasarela: desde aquí no hay nada que cambiar.";
+      `antes de que llegara a la API. No es la clave ni el modelo. ${salida}`;
   }
 
   // Sin marcas reconocibles: se dice el estado y, si el cuerpo era texto corto y

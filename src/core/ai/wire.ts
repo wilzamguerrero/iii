@@ -36,6 +36,9 @@ function ascii(value: string): string {
  * demás en JSON. Viajan en una sola cabecera y no una por cada una para que no se
  * puedan confundir con las de la petición: lo que llegue ahí lo revisa
  * `safeHeaders` en el servidor antes de reenviarlo a nadie.
+ *
+ * `X-Ai-Format` dice si esa API habla el formato de Anthropic. Va por cabecera y no
+ * en el cuerpo porque `ai-models` también lo necesita y ahí no hay cuerpo.
  */
 export function providerHeaders(provider: ProviderId): Record<string, string> {
   const headers: Record<string, string> = {};
@@ -51,6 +54,7 @@ export function providerHeaders(provider: ProviderId): Record<string, string> {
     if (custom.headers && Object.keys(custom.headers).length > 0) {
       headers["X-Ai-Headers"] = JSON.stringify(custom.headers);
     }
+    if (custom.format === "anthropic") headers["X-Ai-Format"] = "anthropic";
   }
 
   return headers;

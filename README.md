@@ -179,6 +179,17 @@ cortafuegos de Cloudflare. Antes eso se descubría al preguntar lo primero; ahor
 configurar. El catálogo espera quince segundos por destino y una respuesta sin flujo dos
 minutos; el flujo no lleva tope, para no cortar una respuesta larga.
 
+Y una última pieza para las APIs que **no** hablan el formato de OpenAI: un desplegable elige
+entre «Formato OpenAI · /chat/completions» y «Formato Anthropic · /messages». Existe por un
+caso real: una pasarela cuya lista de modelos se lee sin problema, cuyo `/chat/completions`
+devuelve 403 desde Cloudflare —con clave y sin ella, con `Bearer` y con `x-api-key`, con
+`User-Agent` de navegador y sin ninguno— y cuyo `/messages` contesta con la respuesta entera.
+La traducción vive **sólo en el servidor** (`api/_anthropic.ts`): saca el `system` a su campo,
+junta los mensajes seguidos del mismo papel, pone el `max_tokens` que Anthropic exige y
+convierte los eventos del flujo en trozos de OpenAI, descartando los bloques de razonamiento.
+El cliente sigue hablando un solo formato y no sabe que esto pasa. La clave viaja en
+`x-api-key` sin que haya que configurar nada.
+
 **Los modelos no están escritos en ningún archivo.** Cada consulta se le hace al
 proveedor —`/models` de OpenRouter, de NVIDIA o de Copilot— y el registro público de
 models.dev sólo completa lo que la respuesta no traiga: nombre legible, contexto, si

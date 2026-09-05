@@ -253,6 +253,45 @@ export function mountAiSettings(container: HTMLElement): void {
    * El pliegue empieza abierto si ya hay algo puesto: si no, lo que se configuró
    * una vez quedaría escondido.
    */
+  /**
+   * Qué formato habla esa API. Está fuera del pliegue de autenticación porque no es
+   * un detalle de la clave: cambia la ruta a la que se pregunta y la forma del
+   * cuerpo. Se descubrió haciendo falta con una pasarela que devuelve 403 desde
+   * Cloudflare en `/chat/completions` y contesta 200 en `/messages`.
+   */
+  function buildFormat(entry: CustomProvider): HTMLElement {
+    const choice = el("select", {
+      class: "sel",
+      attrs: { "aria-label": "Formato de la API" },
+      on: {
+        change: () => {
+          const value = choice.value === "anthropic" ? "anthropic" : "openai";
+          updateCustomProvider(entry.id, { format: value });
+          // La lista de modelos se pide por otra cabecera de clave según el
+          // formato, así que la guardada puede no valer.
+          forgetCatalog(entry.id);
+          say(value === "anthropic"
+            ? "Formato Anthropic: se preguntará a /messages."
+            : "Formato OpenAI: se preguntará a /chat/completions.");
+        },
+      },
+    }, [
+      el("option", { text: "Formato OpenAI · /chat/completions", attrs: { value: "openai" } }),
+      el("option", { text: "Formato Anthropic · /messages", attrs: { value: "anthropic" } }),
+    ]);
+    choice.value = entry.format === "anthropic" ? "anthropic" : "openai";
+
+    return el("div", { class: "pnl__block" }, [
+      el("div", { class: "pnl__row" }, [choice]),
+      el("p", { class: "pnl__note" }, [
+        "El de OpenAI es el normal. Elige el de Anthropic si esa API sólo sirve ",
+        el("code", { text: "/v1/messages" }),
+        ": el servidor traduce la conversación en los dos sentidos y la clave viaja en ",
+        el("code", { text: "x-api-key" }), " sin tocar nada más.",
+      ]),
+    ]);
+  }
+
   function buildAdvanced(entry: CustomProvider): HTMLElement {
     if (entry.keyHeader || Object.keys(entry.headers ?? {}).length > 0) advanced = true;
 
@@ -404,6 +443,7 @@ export function mountAiSettings(container: HTMLElement): void {
         el("div", { class: "search" }, [url]),
         saveUrl,
       ]),
+      buildFormat(entry),
       buildAdvanced(entry),
       el("div", { class: "pnl__row" }, [
         el("button", {
@@ -1022,7 +1062,7 @@ export function mountAiSettings(container: HTMLElement): void {
     // El modelo elegido no está a propósito: escribirlo a mano no debe repintar.
     const signature = [
       mode, provider, browserKey(provider) ?? "", entry?.baseUrl ?? "",
-      entry?.keyHeader ?? "", JSON.stringify(entry?.headers ?? {}),
+      entry?.keyHeader ?? "", JSON.stringify(entry?.headers ?? {}), entry?.format ?? "",
     ].join("|");
     if (signature === shown) { markSeg(); return; }
 

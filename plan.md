@@ -423,8 +423,10 @@ Streaming SSE con cancelación.
 URL base, clave opcional, y —desplegando «Autenticación y cabeceras»— la cabecera por la que
 viaja la clave y hasta ocho cabeceras propias. El modelo se elige del catálogo o **se
 escribe**, para que una API sin `/models` siga sirviendo. «Probar conexión» manda una
-pregunta mínima de verdad y dice qué contestó. Lo portado de kilocode y lo dejado fuera
-—formato de Anthropic, indirección `{env:VARIABLE}`— está en §12 D3.
+pregunta mínima de verdad y dice qué contestó. Y un desplegable dice **qué formato habla** esa
+API: el de OpenAI o el de Anthropic (`/messages`), que el servidor traduce en los dos
+sentidos sin que el cliente lo note. Lo portado de kilocode, y la única cosa que se dejó
+fuera —la indirección `{env:VARIABLE}`, que aquí sería una fuga—, está en §12 D3.
 
 **Contexto del documento**, que es lo que hace que "vea la información": la intención
 declarada, el proyecto y la página abiertos y su contenido recortado a 12 000 caracteres.
@@ -681,17 +683,40 @@ Ninguno queda bloqueado por las decisiones de este plan.
    estar bien— y su `POST /v1/chat/completions` devolvía 403 desde Cloudflare. Eso se
    descubría al preguntar lo primero; ahora se descubre al configurar.
 
-   **Lo que no se portó, y por qué.** (a) El **formato de Anthropic** (`/v1/messages`): las
-   cabeceras y el modelo escrito no arreglan un cuerpo distinto, un `system` que va aparte,
-   un `max_tokens` obligatorio y un flujo con otros eventos. Es una segunda traducción
-   —cuerpo y SSE— en el servidor, y quien quiera Claude ya lo tiene por OpenRouter o por
-   cualquier pasarela que sirva esos modelos en el camino de OpenAI. Queda anotado como
-   trabajo posible, no como falta. (b) La **indirección `{env:VARIABLE}`** de kilocode, que
+   **Lo que no se portó, y por qué.** La **indirección `{env:VARIABLE}`** de kilocode, que
    deja escribir el nombre de una variable de entorno en vez de la clave. Allí es inofensiva
    —la extensión corre en el ordenador de quien la usa—; aquí el servidor es compartido, y
    una variable elegida desde el navegador junto a una URL elegida desde el navegador es un
    camino para sacar los secretos del despliegue hacia el destino que quiera quien pregunte.
    **No debe portarse.**
+
+   **Tercera ampliación (2026-09-05): el formato de Anthropic.** Esta misma tabla decía, unas
+   líneas más arriba, que `/v1/messages` quedaba fuera porque las cabeceras no arreglan un
+   cuerpo distinto. Se escribió el mismo día, en cuanto apareció el caso que lo pedía: una
+   pasarela cuya lista de modelos se lee sin problema, cuyo `POST /v1/chat/completions`
+   devuelve 403 desde Cloudflare —comprobado con la clave de verdad, sin clave, con `Bearer`,
+   con `x-api-key`, sin `User-Agent`, con uno de navegador y con `GET` en lugar de `POST`: 403
+   en los siete— y cuyo `POST /v1/messages` contesta 200 con la respuesta entera. Cualquier
+   ruta que contenga `chat/completions`, incluso una que no existe en esa aplicación, la para
+   su cortafuegos; `/v1/inventada` llega y devuelve un 404 de la API. No era nada nuestro:
+   esa pasarela sólo sirve el camino de Anthropic.
+
+   La traducción vive **sólo en el servidor** (`api/_anthropic.ts`), y es la condición que la
+   hace aceptable: `src/core/ai/chat.ts` sigue hablando un único formato, el de OpenAI, y no
+   sabe que esto existe. Entra un cuerpo de OpenAI y sale uno de OpenAI, aunque por el medio
+   la conversación haya ido y vuelto en el otro. Lo que hace la traducción: saca los mensajes
+   `system` a un campo aparte, junta los seguidos del mismo papel y descarta un asistente que
+   abra la conversación —las tres cosas que Anthropic rechaza con un 400—, pone el
+   `max_tokens` que exige (4096, que cabe en todos los modelos), y convierte los eventos del
+   flujo en trozos de OpenAI. Los bloques `thinking` se dejan pasar de largo: son el
+   razonamiento del modelo y enseñarlos sería dar el borrador por respuesta. La clave viaja en
+   `x-api-key` y `anthropic-version` se fija en el servidor.
+
+   En los ajustes es un desplegable en la ficha del proveedor —«Formato OpenAI ·
+   /chat/completions» o «Formato Anthropic · /messages»—, fuera del pliegue de autenticación
+   porque no es un detalle de la clave: cambia la ruta y la forma del cuerpo. Y una URL
+   pegada sin ruta (`https://api.ejemplo.com`, que es como la documentan las APIs que siguen
+   a Anthropic) se completa con `/v1`, que es la ruta de todas.
 4. ~~**D4 — Vercel** como destino de despliegue.~~ **Aplicada en la Fase 0** (`vercel.json`).
 5. **La tabla de naturaleza → herramientas de §6.2** es una propuesta derivada del catálogo
    del Documento Maestro. Conviene revisarla con Edison antes de la Fase 7, porque de ella
@@ -740,7 +765,8 @@ Lo que hay en pie:
   elegir y hasta ocho cabeceras propias revisadas en el servidor), clave por navegador o por
   entorno, alta por dispositivo para GitHub, y catálogo pedido al proveedor —completado por
   el registro de models.dev— con caché de una hora, quince segundos de espera por destino y
-  el modelo escrito a mano si esa API no lo publica. «Probar conexión» manda una pregunta
+  el modelo escrito a mano si esa API no lo publica. Un proveedor propio puede hablar el
+  formato de OpenAI o el de Anthropic; la traducción es del servidor. «Probar conexión» manda una pregunta
   mínima de verdad antes de que haga falta. No hay ninguna lista de modelos escrita.
   Todo eso se configura **dentro de la ventana del asistente**, en «Ajustes».
 - **El asistente**: tirador de papel y ventana, los dos arrastrables y persistentes; el
@@ -760,8 +786,10 @@ navegador de quien lo usa:
    cuenta de GitHub con el código que aparece. Después, abrir una página y preguntarle qué
    le falta: si responde citando lo que hay escrito, el contexto funciona.
 3. **Un proveedor añadido a mano contra su API real.** El servidor se probó con un eco
-   local: las cabeceras llegan como se escribieron, las prohibidas se rechazan con 400 y el
-   corte de quince segundos salta. Lo que no se puede probar sin la cuenta de alguien es la
+   local y contra una pasarela de verdad: las cabeceras llegan como se escribieron, las
+   prohibidas se rechazan con 400, el corte de quince segundos salta, y por el camino de
+   Anthropic la traducción va y vuelve —`system` aparte, `thinking` descartado, `[DONE]`
+   al final— con respuesta viva. Lo que no se puede probar sin la cuenta de alguien es la
    vuelta completa en el navegador: añadir la API, desplegar «Autenticación y cabeceras»,
    elegir `api-key` o `x-api-key` si toca, guardar, ver el catálogo o escribir el modelo, y
    «Probar conexión» hasta que conteste.

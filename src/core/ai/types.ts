@@ -57,6 +57,17 @@ export interface CustomProvider {
    * antes de reenviarlas (`safeHeaders` en `api/_ai.ts`).
    */
   headers?: Record<string, string>;
+  /**
+   * Qué formato habla esa API. `openai` —lo normal— es `/chat/completions` con
+   * `messages`. `anthropic` es `/messages`, con el `system` aparte y otro flujo:
+   * el servidor traduce en los dos sentidos (`api/_anthropic.ts`), así que desde
+   * aquí la conversación es la misma. Ausente: `openai`.
+   *
+   * Hace falta porque existen pasarelas que sólo sirven ese camino —una de ellas
+   * devuelve 403 desde Cloudflare en `/chat/completions` y 200 en `/messages`— y
+   * ninguna cabecera arregla un cuerpo distinto.
+   */
+  format?: "openai" | "anthropic";
 }
 
 export interface ProviderInfo {

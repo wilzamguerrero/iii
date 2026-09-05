@@ -12,6 +12,7 @@
  */
 
 import type { ApiHandler } from "./_types.ts";
+import { fromAnthropicReply, pipeAnthropicStream, toAnthropicBody } from "./_anthropic.ts";
 import {
   authHeaders, describe, explainBody, fetchWithFallback, noStore, pipeStream, readTarget,
   resolveKey,
@@ -108,8 +109,11 @@ const handler: ApiHandler = async (req, res) => {
   }
   const stream = body.stream === true;
 
-  const payload: Record<string, unknown> = { model, messages };
-  if (stream) payload.stream = true;
+  // El cuerpo se traduce aquí cuando el destino habla el formato de Anthropic. El
+  // cliente manda siempre el de OpenAI: la diferencia no sube hasta el navegador.
+  const payload: Record<string, unknown> = target.format === "anthropic"
+    ? toAnthropicBody(model, messages, stream)
+    : { model, messages, ...(stream ? { stream: true } : {}) };
 
   try {
     const upstream = await fetchWithFallback(target.chatUrls, {
@@ -133,18 +137,32 @@ const handler: ApiHandler = async (req, res) => {
     });
 
     if (stream && upstream.ok) {
-      await pipeStream(upstream, res);
+      await (target.format === "anthropic"
+        ? pipeAnthropicStream(upstream, res)
+        : pipeStream(upstream, res));
       return;
     }
 
     const data = await upstream.text();
     const type = upstream.headers.get("content-type");
 
+    if (upstream.ok && target.format === "anthropic") {
+      try {
+        res.status(200).json(fromAnthropicReply(JSON.parse(data)));
+        return;
+      } catch {
+        // Un 200 que no es JSON. Sigue por abajo, que ya sabe contarlo.
+      }
+    }
+
     // Un fallo en JSON se reenvía tal cual: es lo único que explica de verdad un
     // 429 o un 402. Uno que no es JSON —una página de error de un cortafuegos,
     // por ejemplo— se resume, porque si no acabaría entero en la conversación.
     if (!upstream.ok) {
-      const message = explainBody(upstream.status, target.label, type, data);
+      const message = explainBody(
+        upstream.status, target.label, type, data,
+        target.custom && target.format === "openai",
+      );
       if (message) {
         // El resumen, no el cuerpo: la página de un cortafuegos son kilobytes de
         // HTML y en la terminal sólo tapan lo que venía antes.
