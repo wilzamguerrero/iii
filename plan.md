@@ -609,13 +609,27 @@ Ninguno queda bloqueado por las decisiones de este plan.
    fase entera. El precio, asumido: dentro de Notion el documento se ve como código.
    Si más adelante importa que se vea formateado, el cambio afecta a `core/notion/tree.ts`
    y a la Fase 3, no al resto.
-3. ~~**D3 — OpenRouter como proveedor inicial.**~~ **Aplicada en la Fase 5, ampliada a
-   tres.** `openrouter`, `nvidia` y `github` (Copilot), porque los tres hablan el formato
-   de OpenAI y el coste de admitirlos era una tabla, no una capa. La clave la pone cada
-   persona: el navegador la manda en `X-Ai-Key` y el servidor sólo recurre a su propio
-   entorno si no viene ninguna. GitHub no usa clave sino el alta por dispositivo, con el
-   `client_id` fijado en el servidor para que ese camino no pueda usarse contra otra
-   aplicación.
+3. ~~**D3 — OpenRouter como proveedor inicial.**~~ **Aplicada en la Fase 5 y abierta a
+   cualquier proveedor.** `openrouter`, `nvidia` y `github` (Copilot) van en una tabla fija
+   del servidor, porque los tres hablan el formato de OpenAI y el coste de admitirlos era
+   esa tabla, no una capa. La clave la pone cada persona: el navegador la manda en
+   `X-Ai-Key` y el servidor sólo recurre a su propio entorno si no viene ninguna. GitHub
+   no usa clave sino el alta por dispositivo, con el `client_id` fijado en el servidor
+   para que ese camino no pueda usarse contra otra aplicación.
+
+   **Ampliación (2026-09-05): proveedores propios y catálogo sin lista.** La persona puede
+   añadir cualquier API con el formato de OpenAI («＋ Otro» en la pestaña IA). Los tres de
+   casa siguen ignorando la URL que venga del navegador —su dirección está en la tabla—;
+   sólo el destino `custom` la acepta, y pasa por un filtro en el servidor: `https`, sin
+   credenciales embebidas, sin parámetros, sin redes internas ni direcciones de metadatos,
+   y con `redirect: "manual"` para que un 302 no lleve la petición a una red privada.
+   `AI_CUSTOM_PROVIDERS` gobierna el permiso (`local` en desarrollo, `public` desplegado,
+   `off` para cerrarlo). Límite anotado en el código: un nombre público que resuelva a una
+   IP privada pasa el filtro, porque fijar la IP resuelta no se puede sin un agente propio.
+   El catálogo se le pide al proveedor en cada consulta y el registro de models.dev
+   (`api/_registry.ts`, seis horas de caché) sólo completa metadatos o hace de respaldo
+   cuando la API no tiene `/models`; `source` dice de dónde salió la lista. Ninguna lista
+   de modelos vive en el repositorio.
 4. ~~**D4 — Vercel** como destino de despliegue.~~ **Aplicada en la Fase 0** (`vercel.json`).
 5. **La tabla de naturaleza → herramientas de §6.2** es una propuesta derivada del catálogo
    del Documento Maestro. Conviene revisarla con Edison antes de la Fase 7, porque de ella
@@ -635,8 +649,10 @@ Lo que hay en pie:
   proxy con lista blanca y selector de página raíz.
 - **Proyectos**: el árbol bajo esa raíz. Crear proyecto y página, renombrar, borrar con
   confirmación en el propio botón, abrir una página —que es lo que el asistente pasa a ver.
-- **IA**: tres proveedores, clave por navegador o por entorno del servidor, alta por
-  dispositivo para GitHub, catálogo de modelos real con caché de una hora.
+- **IA**: tres proveedores de casa más los que la persona añada («＋ Otro»: cualquier API
+  con el formato de OpenAI, con la URL filtrada en el servidor), clave por navegador o por
+  entorno, alta por dispositivo para GitHub, y catálogo pedido al proveedor —completado por
+  el registro de models.dev— con caché de una hora. No hay ninguna lista de modelos escrita.
 - **El asistente**: tirador de papel y ventana, los dos arrastrables y persistentes; el
   hilo de la conversación fuera de la interfaz; el sistema 3i escrito para preguntar.
 

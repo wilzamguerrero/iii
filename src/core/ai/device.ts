@@ -15,6 +15,13 @@ const ENDPOINT = "/api/github-device";
 const DEFAULT_INTERVAL_S = 5;
 /** Lo que GitHub pide añadir al intervalo cuando responde `slow_down`. */
 const SLOW_DOWN_S = 5;
+/**
+ * Margen sobre cada espera. GitHub cuenta el intervalo desde que él respondió,
+ * no desde que nosotros preguntamos: sin este colchón, la red hace que una
+ * pregunta llegue un pelo antes de tiempo y se pierde un turno con `slow_down`.
+ * Es lo que hace la herramienta de referencia (opencode).
+ */
+const MARGIN_MS = 3_000;
 
 export interface DeviceStart {
   deviceCode: string;
@@ -77,7 +84,7 @@ export async function waitForDeviceToken(
   let wait = start.interval;
 
   for (;;) {
-    await sleep(wait * 1000, signal);
+    await sleep(wait * 1000 + MARGIN_MS, signal);
     if (Date.now() > deadline) throw new Error("El código caducó. Empieza otra vez.");
 
     const data = await post({ step: "token", device_code: start.deviceCode }, signal);
@@ -87,7 +94,12 @@ export async function waitForDeviceToken(
 
     const error = text(data.error);
     if (error === "authorization_pending") continue;
-    if (error === "slow_down") { wait += SLOW_DOWN_S; continue; }
+    if (error === "slow_down") {
+      // Si GitHub dice cuánto esperar, manda él; si no, los cinco segundos suyos.
+      const asked = seconds(data.interval, 0);
+      wait = asked > wait ? asked : wait + SLOW_DOWN_S;
+      continue;
+    }
     if (error === "expired_token") throw new Error("El código caducó. Empieza otra vez.");
     if (error === "access_denied") throw new Error("Cancelaste la autorización en GitHub.");
     throw new Error(text(data.error_description) || error || "GitHub no devolvió ningún token.");

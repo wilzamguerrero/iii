@@ -73,7 +73,7 @@ igual medio segundo después de la pasada.
 | `src/boot/`             | lo que tiene que pasar antes de la intro (la URL de OAuth)    |
 | `src/core/store.ts`     | estado compartido: `get`, `set`, `subscribe`                  |
 | `src/core/notion/`      | oauth, cliente, tipos y el árbol de proyectos y páginas       |
-| `src/core/ai/`          | proveedores, claves, modelos, alta por dispositivo, el hilo   |
+| `src/core/ai/`          | proveedores (los tres y los propios), claves, modelos, alta por dispositivo, el hilo |
 | `src/core/state/`       | lo que el asistente ve: la intención y la página abierta      |
 | `src/core/persist/`     | la sesión de Notion, guardada entre visitas                   |
 | `src/ui/dom.ts`         | `el()`, `render()`, `debounce` — nunca `innerHTML`            |
@@ -89,7 +89,8 @@ igual medio segundo después de la pasada.
 | `src/utils.js`          | *easings*, ruido, amortiguación, aleatorio con semilla       |
 | `vite.config.ts`        | alias de `three`, plugin de API, objetivo del build          |
 | `tools/vite-api-plugin.ts` | sirve `api/*.ts` en desarrollo con la firma de Vercel      |
-| `api/`                  | servidor: `health`, Notion (`notion-oauth`, `notion`) e IA (`ai-chat`, `ai-models`, `github-device`) |
+| `api/`                  | servidor: `health`, Notion (`notion-oauth`, `notion`) e IA (`ai-chat`, `ai-models`, `ai-registry`, `github-device`) |
+| `api/_registry.ts`      | el registro de models.dev: metadatos y respaldo, con caché de seis horas |
 
 Dos decisiones que no se ven en el código y conviene no deshacer sin querer:
 
@@ -136,6 +137,22 @@ La pestaña **IA** no guarda ninguna clave en el servidor. Se elige proveedor
 escribiendo un código corto en `github.com/login/device`, como en las herramientas de
 consola) y se elige modelo del catálogo real, que se guarda una hora. Si el servidor
 tiene su propia clave en el entorno, la pestaña lo dice y no hace falta pegar nada.
+
+Detrás de los tres, **«＋ Otro» añade cualquier API que hable el formato de OpenAI**:
+un nombre, la URL base y su clave si la pide. El nombre se autocompleta con el
+directorio de [models.dev](https://models.dev) —171 proveedores compatibles— y al
+elegir uno la URL viene ya puesta. La URL la comprueba el servidor antes de llamarla:
+sólo `https`, sin usuario ni contraseña, y nunca a una red interna. En desarrollo
+también valen las direcciones de la propia máquina, que es como se usa Ollama o LM
+Studio; `AI_CUSTOM_PROVIDERS` decide hasta dónde llega en un despliegue.
+
+**Los modelos no están escritos en ningún archivo.** Cada consulta se le hace al
+proveedor —`/models` de OpenRouter, de NVIDIA o de Copilot— y el registro público de
+models.dev sólo completa lo que la respuesta no traiga: nombre legible, contexto, si
+razona y si es gratis. Cuando una API no tiene `/models` —o lo tiene detrás de una
+clave— la lista sale del registro y la pestaña lo dice en vez de fingir que la dio el
+proveedor. `gratis` sólo se marca donde el proveedor publica precios: NVIDIA declara
+todo a coste cero y eso no significa nada.
 
 ## El asistente
 

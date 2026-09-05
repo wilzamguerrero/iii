@@ -1,5 +1,5 @@
 import { activeProvider, chosenModel } from "./config.ts";
-import { apiError, keyHeaders } from "./wire.ts";
+import { apiError, providerHeaders, wireProvider } from "./wire.ts";
 import type { ChatMessage, ProviderId } from "./types.ts";
 
 /**
@@ -33,9 +33,14 @@ export async function streamChat(options: StreamOptions): Promise<string> {
     headers: {
       "Content-Type": "application/json",
       Accept: "text/event-stream",
-      ...keyHeaders(provider),
+      ...providerHeaders(provider),
     },
-    body: JSON.stringify({ provider, model, messages: options.messages, stream: true }),
+    body: JSON.stringify({
+      provider: wireProvider(provider),
+      model,
+      messages: options.messages,
+      stream: true,
+    }),
     signal: options.signal,
   });
 

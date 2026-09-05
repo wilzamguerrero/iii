@@ -1,5 +1,5 @@
-import { browserKey } from "./config.ts";
-import type { ProviderId } from "./types.ts";
+import { browserKey, customProvider } from "./config.ts";
+import { isCustom, type ProviderId } from "./types.ts";
 
 /**
  * Lo que comparten las llamadas a `api/ai-*`: dónde va la clave y cómo se lee un
@@ -7,13 +7,43 @@ import type { ProviderId } from "./types.ts";
  */
 
 /**
+ * El proveedor tal como lo entiende el servidor. Los propios van todos como
+ * `custom`: el nombre que la persona les puso es cosa de este navegador, y el
+ * servidor sólo necesita la URL, que viaja en `X-Ai-Base`.
+ */
+export function wireProvider(provider: ProviderId): string {
+  return isCustom(provider) ? "custom" : provider;
+}
+
+/** Una cabecera no puede llevar caracteres fuera del ASCII imprimible. */
+function ascii(value: string): string {
+  return /^[ -~]*$/.test(value) ? value : encodeURI(value);
+}
+
+/**
+ * Las cabeceras de una llamada a `api/ai-*`.
+ *
  * La clave del navegador viaja en `X-Ai-Key`. Si no hay, no se manda cabecera y
  * el servidor usará la del entorno; así el mismo código sirve para las dos formas
  * de tener credencial.
+ *
+ * En un proveedor propio va además su URL base, y el identificador del registro
+ * público si se eligió del directorio: con él los modelos salen con su nombre en
+ * vez de con el identificador desnudo.
  */
-export function keyHeaders(provider: ProviderId): Record<string, string> {
+export function providerHeaders(provider: ProviderId): Record<string, string> {
+  const headers: Record<string, string> = {};
+
   const key = browserKey(provider);
-  return key ? { "X-Ai-Key": key } : {};
+  if (key) headers["X-Ai-Key"] = ascii(key);
+
+  const custom = customProvider(provider);
+  if (custom) {
+    headers["X-Ai-Base"] = ascii(custom.baseUrl);
+    if (custom.registry) headers["X-Ai-Registry"] = ascii(custom.registry);
+  }
+
+  return headers;
 }
 
 export class ApiError extends Error {

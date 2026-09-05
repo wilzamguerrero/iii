@@ -7,7 +7,7 @@
  * Informa *si* las credenciales están configuradas, nunca su valor.
  */
 
-import { configuredProviders } from "./_ai.ts";
+import { basePolicy, configuredProviders } from "./_ai.ts";
 import type { ApiHandler } from "./_types.ts";
 
 const handler: ApiHandler = (_req, res) => {
@@ -23,6 +23,9 @@ const handler: ApiHandler = (_req, res) => {
       // Si el servidor tiene clave de un proveedor, la pestaña IA no vuelve a
       // pedirla. Se dice que la hay; nunca cuál es.
       ai: configuredProviders(),
+      // Hasta dónde llegan los proveedores propios en este servidor: la pestaña
+      // IA lo dice antes de que la persona escriba una URL que va a rechazarse.
+      aiCustom: basePolicy(),
     },
   });
 };

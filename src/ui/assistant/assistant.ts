@@ -2,8 +2,9 @@ import { el, render } from "../dom.ts";
 import { makeMovable, type Movable } from "../drag.ts";
 import { origamiSvg } from "../origami.ts";
 import { onMenuVisible } from "../afterIntro.ts";
-import { activeProvider, aiConfig, chosenModel, hasCredential, serverKeys } from "../../core/ai/config.ts";
-import { PROVIDERS } from "../../core/ai/types.ts";
+import {
+  activeProvider, aiConfig, chosenModel, hasCredential, providerLabel, serverKeys,
+} from "../../core/ai/config.ts";
 import { ask, conversation, isAsking, resetConversation, stopAsking } from "../../core/ai/conversation.ts";
 import { intent } from "../../core/state/intent.ts";
 import { selection } from "../../core/state/selection.ts";
@@ -96,11 +97,12 @@ function paintContext(): void {
 function paintFoot(): void {
   if (!footLine) return;
   const provider = activeProvider();
-  const info = PROVIDERS[provider];
+  // Por nombre y no por la tabla: los proveedores propios no están en ella.
+  const label = providerLabel(provider);
 
   if (!hasCredential(provider)) {
     render(footLine,
-      `${info.label}: falta la credencial. `,
+      `${label}: falta la credencial. `,
       el("button", {
         class: "ai-link",
         text: "Configúrala en IA",
@@ -118,7 +120,7 @@ function paintFoot(): void {
   }
 
   const model = chosenModel(provider);
-  footLine.textContent = model ? `${info.label} · ${model}` : info.label;
+  footLine.textContent = model ? `${label} · ${model}` : label;
 }
 
 /* --- preguntar ------------------------------------------------------------ */

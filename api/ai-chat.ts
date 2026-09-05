@@ -2,8 +2,9 @@
  * La conversación con el proveedor de IA.
  *
  * `POST /api/ai-chat` con `{provider, model, messages, stream}`. El proveedor se
- * busca en la tabla de `_ai.ts`; la URL de destino no se construye nunca con
- * datos de la petición.
+ * busca en la tabla de `_ai.ts` y la URL de destino no se construye nunca con
+ * datos de la petición. La excepción son los proveedores propios, donde la URL
+ * base la pone la persona y pasa por la política de `safeBase`.
  *
  * Existe porque las tres APIs quieren la clave en un `Authorization` y ninguna
  * manda cabeceras CORS: el navegador no puede llamarlas de frente. Y porque así
@@ -12,7 +13,7 @@
 
 import type { ApiHandler } from "./_types.ts";
 import {
-  describe, fetchWithFallback, noStore, pipeStream, readProvider, resolveKey,
+  describe, fetchWithFallback, noStore, pipeStream, readTarget, resolveKey,
 } from "./_ai.ts";
 
 /** Topes de cordura. No son de seguridad de la clave, son de no mandar un libro. */
@@ -65,11 +66,12 @@ const handler: ApiHandler = async (req, res) => {
     provider?: unknown; model?: unknown; messages?: unknown; stream?: unknown;
   };
 
-  const spec = readProvider(body.provider);
-  if (!spec) {
-    res.status(400).json({ error: "unknown_provider", message: "Proveedor no reconocido." });
+  const found = readTarget(req, body.provider);
+  if (!found.ok) {
+    res.status(400).json({ error: found.code, message: found.message });
     return;
   }
+  const target = found.target;
 
   const messages = checkMessages(body.messages);
   if (typeof messages === "string") {
@@ -77,34 +79,43 @@ const handler: ApiHandler = async (req, res) => {
     return;
   }
 
-  const key = resolveKey(req, spec);
-  if (!key) {
+  const key = resolveKey(req, target);
+  // Un proveedor propio en la máquina de la persona puede no pedir clave; el
+  // resto sí, y decirlo aquí ahorra un 401 que el proveedor explicaría peor.
+  if (!key && !target.custom) {
     res.status(401).json({
       error: "missing_key",
-      message: `Falta la credencial de ${spec.label}. Configúrala en la pestaña IA.`,
+      message: `Falta la credencial de ${target.label}. Configúrala en la pestaña IA.`,
     });
     return;
   }
 
   const model = typeof body.model === "string" && body.model.trim() && body.model.length <= MAX_MODEL_LENGTH
     ? body.model.trim()
-    : spec.defaultModel;
+    : target.defaultModel;
+  if (!model) {
+    res.status(400).json({
+      error: "missing_model",
+      message: "Elige un modelo en la pestaña IA: este proveedor no tiene uno por defecto.",
+    });
+    return;
+  }
   const stream = body.stream === true;
 
   const payload: Record<string, unknown> = { model, messages };
   if (stream) payload.stream = true;
 
   try {
-    const upstream = await fetchWithFallback(spec.chatUrls, {
+    const upstream = await fetchWithFallback(target.chatUrls, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${key}`,
+        ...(key ? { Authorization: `Bearer ${key}` } : {}),
         "Content-Type": "application/json",
         Accept: stream ? "text/event-stream" : "application/json",
-        ...spec.headers,
+        ...target.headers,
       },
       body: JSON.stringify(payload),
-    });
+    }, { noRedirect: target.custom });
 
     if (stream && upstream.ok) {
       await pipeStream(upstream, res);
@@ -118,7 +129,7 @@ const handler: ApiHandler = async (req, res) => {
     res.setHeader("Content-Type", upstream.headers.get("content-type") ?? "application/json");
     res.send(data);
   } catch (error) {
-    console.error("[ai-chat]", spec.id, describe(error));
+    console.error("[ai-chat]", target.id, describe(error));
     res.status(502).json({ error: "provider_unreachable", message: describe(error) });
   }
 };
