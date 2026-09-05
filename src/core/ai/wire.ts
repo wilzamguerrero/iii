@@ -30,6 +30,12 @@ function ascii(value: string): string {
  * En un proveedor propio va además su URL base, y el identificador del registro
  * público si se eligió del directorio: con él los modelos salen con su nombre en
  * vez de con el identificador desnudo.
+ *
+ * Y, si esa API no habla `Authorization: Bearer` o pide alguna cabecera suya, van
+ * también: `X-Ai-Key-Header` dice por dónde va la clave y `X-Ai-Headers` lleva las
+ * demás en JSON. Viajan en una sola cabecera y no una por cada una para que no se
+ * puedan confundir con las de la petición: lo que llegue ahí lo revisa
+ * `safeHeaders` en el servidor antes de reenviarlo a nadie.
  */
 export function providerHeaders(provider: ProviderId): Record<string, string> {
   const headers: Record<string, string> = {};
@@ -41,6 +47,10 @@ export function providerHeaders(provider: ProviderId): Record<string, string> {
   if (custom) {
     headers["X-Ai-Base"] = ascii(custom.baseUrl);
     if (custom.registry) headers["X-Ai-Registry"] = ascii(custom.registry);
+    if (custom.keyHeader) headers["X-Ai-Key-Header"] = ascii(custom.keyHeader);
+    if (custom.headers && Object.keys(custom.headers).length > 0) {
+      headers["X-Ai-Headers"] = JSON.stringify(custom.headers);
+    }
   }
 
   return headers;

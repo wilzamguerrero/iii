@@ -44,6 +44,19 @@ export interface CustomProvider {
    * que los modelos salgan con su nombre y su ventana de contexto.
    */
   registry?: string;
+  /**
+   * Por qué cabecera viaja la clave, cuando no es `Authorization: Bearer`. Azure
+   * OpenAI pide `api-key`; el formato de Anthropic, `x-api-key`. Vacío o ausente:
+   * el `Bearer` de siempre.
+   */
+  keyHeader?: string;
+  /**
+   * Las demás cabeceras que pida esa API. Es la pieza que faltaba para poder
+   * añadir de verdad cualquier proveedor: hay pasarelas que enrutan por una
+   * cabecera propia y sin ella no contestan. El servidor las revisa una por una
+   * antes de reenviarlas (`safeHeaders` en `api/_ai.ts`).
+   */
+  headers?: Record<string, string>;
 }
 
 export interface ProviderInfo {

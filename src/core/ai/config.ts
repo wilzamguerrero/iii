@@ -51,13 +51,41 @@ function pick(value: unknown): Record<string, string> {
   return out;
 }
 
+/**
+ * Un nombre de cabecera que se puede guardar. Quien decide de verdad es
+ * `safeHeaderName` en el servidor —y ahí está también la lista de las prohibidas—;
+ * esto sólo evita guardar algo que nunca va a poder viajar.
+ */
+export const HEADER_NAME = /^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,64}$/;
+
+/**
+ * Las cabeceras que se pueden guardar, sin las que no.
+ *
+ * El valor tiene que ser ASCII imprimible, y no por gusto: es lo que garantiza
+ * que `X-Ai-Headers` viaje como JSON plano sin tener que escapar nada. Una
+ * comilla curva pegada de una documentación se rechaza aquí, donde se puede
+ * explicar, en vez de convertirse en una cabecera ilegal más adelante.
+ */
+export const HEADER_VALUE = /^[\t\x20-\x7e]+$/;
+
+function pickHeaders(value: unknown): Record<string, string> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+  const out: Record<string, string> = {};
+  for (const [name, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (!HEADER_NAME.test(name)) continue;
+    if (typeof raw !== "string" || !HEADER_VALUE.test(raw.trim())) continue;
+    out[name] = raw.trim();
+  }
+  return out;
+}
+
 function pickCustom(value: unknown): CustomProvider[] {
   if (!Array.isArray(value)) return [];
   const out: CustomProvider[] = [];
   const seen = new Set<string>();
   for (const raw of value) {
     if (typeof raw !== "object" || raw === null) continue;
-    const { id, label, baseUrl, registry } = raw as Record<string, unknown>;
+    const { id, label, baseUrl, registry, keyHeader, headers } = raw as Record<string, unknown>;
     if (typeof id !== "string" || !isCustom(id) || !isProvider(id) || seen.has(id)) continue;
     if (typeof baseUrl !== "string" || !baseUrl.trim()) continue;
     seen.add(id);
@@ -67,6 +95,9 @@ function pickCustom(value: unknown): CustomProvider[] {
       baseUrl: baseUrl.trim(),
     };
     if (typeof registry === "string" && registry) entry.registry = registry;
+    if (typeof keyHeader === "string" && HEADER_NAME.test(keyHeader)) entry.keyHeader = keyHeader;
+    const extra = pickHeaders(headers);
+    if (Object.keys(extra).length > 0) entry.headers = extra;
     out.push(entry);
   }
   return out;
@@ -178,6 +209,10 @@ export interface NewProvider {
   baseUrl: string;
   /** Identificador en models.dev, si se eligió del directorio. */
   registry?: string;
+  /** Cabecera por la que va la clave, si no es `Authorization: Bearer`. */
+  keyHeader?: string;
+  /** Cabeceras extra que pide esa API. */
+  headers?: Record<string, string>;
 }
 
 /**
@@ -199,6 +234,8 @@ export function addCustomProvider(entry: NewProvider): string {
     baseUrl: entry.baseUrl.trim(),
   };
   if (entry.registry) provider.registry = entry.registry;
+  if (entry.keyHeader) provider.keyHeader = entry.keyHeader;
+  if (entry.headers && Object.keys(entry.headers).length > 0) provider.headers = entry.headers;
 
   aiConfig.set((current) => ({ ...current, custom: [...current.custom, provider], provider: id }));
   return id;
@@ -212,6 +249,8 @@ export function updateCustomProvider(id: string, patch: Partial<NewProvider>): v
       ...(patch.label !== undefined ? { label: patch.label.trim() || entry.label } : {}),
       ...(patch.baseUrl !== undefined ? { baseUrl: patch.baseUrl.trim() || entry.baseUrl } : {}),
       ...(patch.registry !== undefined ? { registry: patch.registry } : {}),
+      ...(patch.keyHeader !== undefined ? { keyHeader: patch.keyHeader } : {}),
+      ...(patch.headers !== undefined ? { headers: patch.headers } : {}),
     }),
   }));
 }

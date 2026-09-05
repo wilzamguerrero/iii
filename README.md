@@ -159,6 +159,26 @@ sólo `https`, sin usuario ni contraseña, y nunca a una red interna. En desarro
 también valen las direcciones de la propia máquina, que es como se usa Ollama o LM
 Studio; `AI_CUSTOM_PROVIDERS` decide hasta dónde llega en un despliegue.
 
+No todas las APIs leen la clave igual, así que en un proveedor propio **la cabecera de la
+clave se elige** —`Authorization: Bearer` por omisión, `api-key` para Azure, `x-api-key`
+para quien copie el estilo de Anthropic, o el nombre que sea— y se pueden añadir **hasta
+ocho cabeceras propias** (`Nombre: valor`, una por línea) para las pasarelas que piden una
+versión, un proyecto o una ruta. Las revisa el servidor antes de reenviarlas: nombre válido,
+valor ASCII imprimible y nada que gobierne la conexión o el cuerpo —`Host`,
+`Content-Length`, `Content-Type`, `Cookie`—. Van al final del bloque, y por eso una cabecera
+`Authorization` escrita a mano gana: es lo que deja usar un esquema que este servidor no
+conoce. Los tres proveedores de casa **ignoran** todo esto; su dirección y su forma de
+autenticar están en una tabla fija.
+
+Cuando una API no publica `/models`, **el modelo se escribe a mano** y ya está: no hay que
+esperar a que su catálogo exista. Y **«Probar conexión»** manda una pregunta mínima de
+verdad por el mismo camino que una real y enseña lo que contestó. Existe por un caso
+concreto: una pasarela cuyo `GET /v1/models` funcionaba —cuatro modelos en la lista, todo
+con aspecto de estar bien— y cuyo `POST /v1/chat/completions` devolvía 403 desde el
+cortafuegos de Cloudflare. Antes eso se descubría al preguntar lo primero; ahora, al
+configurar. El catálogo espera quince segundos por destino y una respuesta sin flujo dos
+minutos; el flujo no lleva tope, para no cortar una respuesta larga.
+
 **Los modelos no están escritos en ningún archivo.** Cada consulta se le hace al
 proveedor —`/models` de OpenRouter, de NVIDIA o de Copilot— y el registro público de
 models.dev sólo completa lo que la respuesta no traiga: nombre legible, contexto, si

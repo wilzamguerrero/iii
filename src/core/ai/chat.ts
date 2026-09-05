@@ -117,3 +117,37 @@ async function readSse(response: Response, onDelta?: (chunk: string) => void): P
 
   return full;
 }
+
+/* --- probar el destino ------------------------------------------------------ */
+
+export interface ProbeOptions {
+  provider?: ProviderId;
+  model?: string | null;
+  signal?: AbortSignal;
+}
+
+/**
+ * Una llamada de verdad, mínima, para saber si ese destino contesta.
+ *
+ * Existe por un caso que pasó: una pasarela cuyo `GET /v1/models` funcionaba —el
+ * catálogo cargaba, cuatro modelos en la lista, todo con aspecto de estar bien— y
+ * cuyo `POST /v1/chat/completions` devolvía 403 desde el cortafuegos de
+ * Cloudflare. Eso no se descubría al configurar el proveedor sino al preguntar lo
+ * primero. Probar aquí lo convierte en un aviso en los ajustes.
+ *
+ * Va por el mismo camino que una pregunta de verdad, en flujo y todo, porque una
+ * prueba que use otro camino puede pasar donde la de verdad falla. Devuelve el
+ * principio de la respuesta: es la prueba de que llegó.
+ */
+export async function probeChat(options: ProbeOptions = {}): Promise<string> {
+  const text = await streamChat({
+    messages: [
+      { role: "system", content: "Contesta solamente con la palabra: listo." },
+      { role: "user", content: "ping" },
+    ],
+    ...(options.provider !== undefined ? { provider: options.provider } : {}),
+    ...(options.model !== undefined ? { model: options.model } : {}),
+    ...(options.signal !== undefined ? { signal: options.signal } : {}),
+  });
+  return text.replace(/\s+/g, " ").trim().slice(0, 120);
+}

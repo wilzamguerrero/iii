@@ -123,6 +123,10 @@ export interface Target {
   base: string;
   /** Cierto cuando la URL la eligió la persona: no se siguen redirecciones. */
   custom: boolean;
+  /** Cabecera por la que viaja la clave. Vacío: `Authorization: Bearer`. */
+  keyHeader: string;
+  /** Cabeceras que pidió la persona. Sólo en los proveedores propios. */
+  extra?: Readonly<Record<string, string>>;
 }
 
 export type TargetResult =
@@ -246,15 +250,123 @@ function header(req: ApiRequest, name: string): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+/* --- cabeceras propias ------------------------------------------------------ */
+
+/**
+ * No todas las APIs ponen la clave en `Authorization: Bearer`: Azure OpenAI la
+ * pide en `api-key`, el formato de Anthropic en `x-api-key`, y hay pasarelas que
+ * además quieren una cabecera para enrutar o para identificar el proyecto. Sin
+ * poder decir eso, esas APIs no se pueden añadir. Es lo que
+ * `reference/kilocode-main` cubre en su proveedor propio con un `options.headers`
+ * libre (`packages/kilo-vscode/src/shared/custom-provider.ts`), y es la pieza que
+ * aquí faltaba.
+ *
+ * Se admiten sólo en los proveedores propios y con la misma desconfianza que la
+ * URL: es texto que viene de la petición y va a acabar en una cabecera HTTP hacia
+ * fuera.
+ *
+ * - El nombre, sólo caracteres de «token» de HTTP. Un espacio o un `:` dentro del
+ *   nombre es la forma de partir una cabecera en dos.
+ * - Prohibidas las que gobiernan la conexión o el cuerpo —`Host`,
+ *   `Content-Length`, `Transfer-Encoding`, `Content-Type`—: cambiarlas no
+ *   configura ningún proveedor, engaña al intermediario que haya delante o rompe
+ *   el cuerpo que este endpoint acaba de armar.
+ * - Ni `\r` ni `\n` ni nada fuera del ASCII imprimible en el valor. Eso es
+ *   inyección de cabeceras de manual.
+ */
+const HEADER_NAME = /^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,64}$/;
+
+const FORBIDDEN_HEADERS = new Set([
+  "host", "connection", "proxy-connection", "proxy-authorization", "content-length",
+  "content-type", "content-encoding", "transfer-encoding", "te", "trailer", "upgrade",
+  "keep-alive", "expect", "cookie", "cookie2", "set-cookie",
+]);
+
+const MAX_HEADERS = 8;
+const MAX_HEADER_VALUE = 1024;
+const MAX_HEADERS_TOTAL = 3072;
+
+/** Para citar en un error sin reenviar lo que llegó tal cual. */
+function quote(raw: string): string {
+  return `«${raw.replace(/[^\x20-\x7e]/g, "").slice(0, 40)}»`;
+}
+
+/** El nombre de cabecera aprobado, `""` si no venía ninguno, o el motivo. */
+export function safeHeaderName(raw: unknown): { name: string } | { error: string } {
+  if (typeof raw !== "string" || !raw.trim()) return { name: "" };
+  const name = raw.trim();
+  if (!HEADER_NAME.test(name)) {
+    return { error: `${quote(name)} no es un nombre de cabecera válido.` };
+  }
+  if (FORBIDDEN_HEADERS.has(name.toLowerCase())) {
+    return { error: `La cabecera ${quote(name)} la pone este servidor y no se puede cambiar.` };
+  }
+  return { name };
+}
+
+/** Las cabeceras propias, aprobadas, o el motivo por el que no valen. */
+export function safeHeaders(raw: unknown): { headers: Record<string, string> } | { error: string } {
+  if (typeof raw !== "string" || !raw.trim()) return { headers: {} };
+  if (raw.length > MAX_HEADERS_TOTAL) return { error: "Las cabeceras propias son demasiadas." };
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { error: "No se entendieron las cabeceras propias." };
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return { error: "Las cabeceras propias tienen que ser pares de nombre y valor." };
+  }
+
+  const entries = Object.entries(parsed as Record<string, unknown>);
+  if (entries.length > MAX_HEADERS) {
+    return { error: `Como máximo ${MAX_HEADERS} cabeceras propias.` };
+  }
+
+  const headers: Record<string, string> = {};
+  for (const [rawName, value] of entries) {
+    const checked = safeHeaderName(rawName);
+    if ("error" in checked) return checked;
+    if (!checked.name) continue;
+    if (typeof value !== "string") return { error: `El valor de ${quote(rawName)} no es texto.` };
+    if (value.length > MAX_HEADER_VALUE) {
+      return { error: `El valor de ${quote(rawName)} es demasiado largo.` };
+    }
+    if (!/^[\t\x20-\x7e]*$/.test(value)) {
+      return { error: `El valor de ${quote(rawName)} lleva caracteres que no caben en una cabecera.` };
+    }
+    headers[checked.name] = value;
+  }
+
+  return { headers };
+}
+
+/**
+ * Dónde va la clave. Por defecto `Authorization: Bearer`, que es lo que hablan
+ * los tres proveedores de casa y casi todo lo compatible con OpenAI. Un proveedor
+ * propio puede pedir otra cabecera, y entonces la clave va ahí a secas: quien
+ * pide `api-key` no espera un `Bearer` delante.
+ */
+export function authHeaders(key: string | null, target: Target): Record<string, string> {
+  if (!key) return {};
+  if (target.keyHeader) return { [target.keyHeader]: key };
+  return { Authorization: `Bearer ${key}` };
+}
+
 const REGISTRY_ID = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 
 /**
  * El destino de esta petición: un proveedor de la tabla, o el propio de la
- * persona descrito en las cabeceras `X-Ai-Base` (obligatoria) y `X-Ai-Registry`
- * (opcional, sólo para saber de dónde sacar los nombres de los modelos).
+ * persona descrito en cuatro cabeceras: `X-Ai-Base` (obligatoria),
+ * `X-Ai-Registry` (de dónde sacar los nombres de los modelos),
+ * `X-Ai-Key-Header` (por dónde va la clave, si no es `Authorization: Bearer`) y
+ * `X-Ai-Headers` (las demás cabeceras que pida esa API, en JSON).
  *
- * En los proveedores de casa la cabecera `X-Ai-Base` se ignora a propósito: si
- * pudiera cambiar el destino de `openrouter`, la tabla no protegería nada.
+ * En los proveedores de casa las cuatro se ignoran a propósito: si `X-Ai-Base`
+ * pudiera cambiar el destino de `openrouter`, la tabla no protegería nada, y una
+ * cabecera propia sobre un destino de casa sólo serviría para hacerle llegar algo
+ * que la tabla no ha decidido.
  */
 export function readTarget(req: ApiRequest, provider: unknown): TargetResult {
   if (typeof provider !== "string") {
@@ -264,6 +376,12 @@ export function readTarget(req: ApiRequest, provider: unknown): TargetResult {
   if (provider === "custom") {
     const checked = safeBase(header(req, "x-ai-base"), basePolicy());
     if ("error" in checked) return { ok: false, code: "bad_base", message: checked.error };
+
+    const named = safeHeaderName(header(req, "x-ai-key-header"));
+    if ("error" in named) return { ok: false, code: "bad_headers", message: named.error };
+
+    const extra = safeHeaders(header(req, "x-ai-headers"));
+    if ("error" in extra) return { ok: false, code: "bad_headers", message: extra.error };
 
     const hint = header(req, "x-ai-registry");
     return {
@@ -280,6 +398,8 @@ export function readTarget(req: ApiRequest, provider: unknown): TargetResult {
         registry: REGISTRY_ID.test(hint) ? hint : "",
         base: checked.base,
         custom: true,
+        keyHeader: named.name,
+        ...(Object.keys(extra.headers).length > 0 ? { extra: extra.headers } : {}),
       },
     };
   }
@@ -305,6 +425,7 @@ export function readTarget(req: ApiRequest, provider: unknown): TargetResult {
       registry: spec.registry,
       base: "",
       custom: false,
+      keyHeader: "",
     },
   };
 }
@@ -344,6 +465,15 @@ export interface FetchOptions {
    * `safeBase` y acabar llamando a una dirección interna.
    */
   noRedirect?: boolean;
+  /**
+   * Corta a los N milisegundos si el proveedor no contesta. Sin esto, una
+   * dirección que acepta la conexión y se calla deja la petición esperando hasta
+   * que la plataforma la mate, y quien acaba de escribir esa URL no ve nada. No
+   * se usa en la conversación en flujo: ahí el silencio largo es normal y el
+   * corte se llevaría por delante una respuesta que estaba llegando. Se aplica a
+   * cada destino de la cascada, no al total.
+   */
+  timeoutMs?: number;
 }
 
 /**
@@ -361,6 +491,7 @@ export async function fetchWithFallback(
     const response = await fetch(url, {
       ...init,
       ...(options.noRedirect ? { redirect: "manual" as const } : {}),
+      ...(options.timeoutMs ? { signal: AbortSignal.timeout(options.timeoutMs) } : {}),
     });
     if (options.noRedirect && response.status >= 300 && response.status < 400) {
       throw new Error("El proveedor redirige a otra dirección. Usa la URL final.");
@@ -408,6 +539,9 @@ export async function pipeStream(upstream: Response, res: ApiResponse): Promise<
 /** Mensaje de error legible sin filtrar cabeceras ni claves. */
 export function describe(error: unknown): string {
   if (!(error instanceof Error)) return "Error interno del servidor.";
+  if (error.name === "TimeoutError") {
+    return "El proveedor no respondió a tiempo. Comprueba la URL y que el servidor esté escuchando.";
+  }
   // `fetch failed` no le dice nada a quien acaba de escribir la URL de su propio
   // servidor: casi siempre es que no hay nadie escuchando ahí.
   if (error.message === "fetch failed") {
@@ -443,8 +577,10 @@ export function explainBody(
 
   const blocked = /Attention Required|cf-error|Cloudflare Ray ID|have been blocked/i.test(text);
   if (blocked) {
-    return `${label} devolvió ${status}: su cortafuegos (Cloudflare) bloqueó la petición. ` +
-      "No es la clave ni el modelo; esa dirección no admite peticiones desde este servidor.";
+    return `${label} devolvió ${status}: su cortafuegos (Cloudflare) bloqueó la petición ` +
+      "antes de que llegara a la API. No es la clave ni el modelo. Si el catálogo de " +
+      "modelos sí carga, lo que está cerrado es sólo el camino del chat, y eso lo abre " +
+      "quien administra esa pasarela: desde aquí no hay nada que cambiar.";
   }
 
   // Sin marcas reconocibles: se dice el estado y, si el cuerpo era texto corto y

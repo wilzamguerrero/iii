@@ -13,8 +13,13 @@ import { apiDev } from "./tools/vite-api-plugin.ts";
  *    cambiaría la revisión y con ella el comportamiento de la coreografía. Este
  *    alias sustituye al `importmap` que tenía index.html: ahora el resolutor de
  *    Vite es la única vía, en desarrollo y en el bundle.
- * 2. `reference/` y `docs/` quedan fuera del watcher. No se compilan —son
- *    material de consulta— y vigilarlos cuesta cientos de archivos por recarga.
+ * 2. `reference/` y `docs/` quedan fuera del watcher **y del rastreador de
+ *    dependencias**. No se compilan —son material de consulta— y vigilarlos
+ *    cuesta cientos de archivos por recarga. Lo segundo es menos evidente: sin
+ *    `optimizeDeps.entries`, Vite busca entradas en todos los `*.html` del
+ *    proyecto, encuentra los cinco que hay bajo `reference/` y sigue sus
+ *    `import` hasta `solid-js` y `@opencode-ai/app`, que no están instalados ni
+ *    lo estarán. De ahí salía el «Are they installed?» al arrancar.
  * 3. `envPrefix` se deja en el valor por omisión (`VITE_`). Es lo que impide que
  *    un secreto de `.env` acabe en el bundle del cliente.
  */
@@ -25,6 +30,12 @@ export default defineConfig({
     alias: {
       three: fileURLToPath(new URL("./vendor/three/three.module.min.js", import.meta.url)),
     },
+  },
+
+  // La única entrada de verdad es index.html; el rastreador no tiene por qué
+  // buscar más (nota 2).
+  optimizeDeps: {
+    entries: ["index.html"],
   },
 
   server: {

@@ -13,13 +13,19 @@
 
 import type { ApiHandler } from "./_types.ts";
 import {
-  describe, explainBody, fetchWithFallback, noStore, pipeStream, readTarget, resolveKey,
+  authHeaders, describe, explainBody, fetchWithFallback, noStore, pipeStream, readTarget,
+  resolveKey,
 } from "./_ai.ts";
 
 /** Topes de cordura. No son de seguridad de la clave, son de no mandar un libro. */
 const MAX_MESSAGES = 80;
 const MAX_CHARS = 200_000;
 const MAX_MODEL_LENGTH = 200;
+/**
+ * Sólo para la respuesta de una vez. En flujo no hay tope: el silencio entre
+ * trozos es normal y cortarlo mataría una respuesta que estaba llegando.
+ */
+const REPLY_TIMEOUT_MS = 120_000;
 
 type Role = "system" | "user" | "assistant";
 const ROLES = new Set<Role>(["system", "user", "assistant"]);
@@ -109,13 +115,22 @@ const handler: ApiHandler = async (req, res) => {
     const upstream = await fetchWithFallback(target.chatUrls, {
       method: "POST",
       headers: {
-        ...(key ? { Authorization: `Bearer ${key}` } : {}),
+        ...authHeaders(key, target),
         "Content-Type": "application/json",
         Accept: stream ? "text/event-stream" : "application/json",
         ...target.headers,
+        // Las de la persona van al final a propósito: es lo que le deja mandar un
+        // `Authorization` distinto —un `Basic`, una pasarela con su propio
+        // esquema— sin que este endpoint tenga que conocer cada caso. Lo que
+        // gobierna la conexión o el cuerpo no llega hasta aquí: `safeHeaders` lo
+        // rechaza antes.
+        ...target.extra,
       },
       body: JSON.stringify(payload),
-    }, { noRedirect: target.custom });
+    }, {
+      noRedirect: target.custom,
+      ...(stream ? {} : { timeoutMs: REPLY_TIMEOUT_MS }),
+    });
 
     if (stream && upstream.ok) {
       await pipeStream(upstream, res);
@@ -131,7 +146,9 @@ const handler: ApiHandler = async (req, res) => {
     if (!upstream.ok) {
       const message = explainBody(upstream.status, target.label, type, data);
       if (message) {
-        console.error("[ai-chat]", target.id, upstream.status, data.slice(0, 200));
+        // El resumen, no el cuerpo: la página de un cortafuegos son kilobytes de
+        // HTML y en la terminal sólo tapan lo que venía antes.
+        console.error("[ai-chat]", target.id, message);
         res.status(upstream.status).json({ error: "provider_error", message });
         return;
       }

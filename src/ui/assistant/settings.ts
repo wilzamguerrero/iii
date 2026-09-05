@@ -1,14 +1,17 @@
 import { el, render } from "../dom.ts";
 import {
   activeProvider, addCustomProvider, aiConfig, browserKey, chosenModel, clearKey,
-  customPolicy, customProvider, hasCredential, probeServerKeys, providerIds,
-  providerLabel, removeCustomProvider, serverKeys, setKey, setModel, setProvider,
+  customPolicy, customProvider, hasCredential, HEADER_NAME, HEADER_VALUE, probeServerKeys,
+  providerIds, providerLabel, removeCustomProvider, serverKeys, setKey, setModel, setProvider,
   updateCustomProvider,
 } from "../../core/ai/config.ts";
 import { cachedCatalog, forgetCatalog, listModels } from "../../core/ai/models.ts";
+import { probeChat } from "../../core/ai/chat.ts";
 import { startDeviceFlow, waitForDeviceToken, type DeviceStart } from "../../core/ai/device.ts";
 import { loadDirectory, type DirectoryEntry } from "../../core/ai/registry.ts";
-import { builtinInfo, isBuiltin, isCustom, type AiModel, type ProviderId } from "../../core/ai/types.ts";
+import {
+  builtinInfo, isBuiltin, isCustom, type AiModel, type CustomProvider, type ProviderId,
+} from "../../core/ai/types.ts";
 
 /**
  * Los ajustes del asistente: qué proveedor, con qué credencial y con qué modelo.
@@ -35,6 +38,10 @@ import { builtinInfo, isBuiltin, isCustom, type AiModel, type ProviderId } from 
 const MANY = 40;
 /** Desde cuántos modelos aparece el filtro de texto. */
 const FILTER_FROM = 12;
+/** Cuántas cabeceras propias se admiten. El mismo tope que `safeHeaders` en el servidor. */
+const MAX_HEADERS = 8;
+/** Cuánto se espera a que el proveedor conteste a la prueba de conexión. */
+const PROBE_MS = 45_000;
 
 export function mountAiSettings(container: HTMLElement): void {
   const status = el("p", { class: "msg" });
@@ -46,6 +53,8 @@ export function mountAiSettings(container: HTMLElement): void {
   let waiting: AbortController | null = null;
   /** `add` mientras se está dando de alta un proveedor propio. */
   let mode: "provider" | "add" = "provider";
+  /** Si el pliegue de autenticación y cabeceras está abierto. */
+  let advanced = false;
   let shown = "";
 
   function say(message: string, bad = false): void {
@@ -183,6 +192,180 @@ export function mountAiSettings(container: HTMLElement): void {
 
   /* --- proveedor propio: clave, URL y baja -------------------------------- */
 
+  /* --- autenticación y cabeceras de un proveedor propio -------------------- */
+
+  /**
+   * Los sitios donde una API espera la clave. El `Bearer` es lo normal y lo que
+   * hablan casi todas las compatibles con OpenAI; las otras dos están porque son
+   * las que se encuentran de verdad, y la última deja escribir cualquiera.
+   *
+   * `OTHER` es `*` a propósito: no es un nombre de cabecera válido, así que no
+   * puede confundirse nunca con uno escrito a mano.
+   */
+  const OTHER = "*";
+  const KEY_HEADERS: readonly { value: string; text: string }[] = [
+    { value: "", text: "Authorization: Bearer — lo normal" },
+    { value: "api-key", text: "api-key — Azure OpenAI" },
+    { value: "x-api-key", text: "x-api-key — formato Anthropic" },
+    { value: OTHER, text: "otra cabecera…" },
+  ];
+
+  function printHeaders(entry: CustomProvider): string {
+    return Object.entries(entry.headers ?? {})
+      .map(([name, value]) => `${name}: ${value}`)
+      .join("\n");
+  }
+
+  /** Las cabeceras escritas, o la primera línea que no vale y por qué. */
+  function parseHeaders(text: string): Record<string, string> | string {
+    const out: Record<string, string> = {};
+
+    for (const raw of text.split("\n")) {
+      const line = raw.trim();
+      if (!line) continue;
+
+      const cut = line.indexOf(":");
+      if (cut < 1) return `«${line.slice(0, 30)}» no tiene la forma «Nombre: valor».`;
+      const name = line.slice(0, cut).trim();
+      const value = line.slice(cut + 1).trim();
+
+      if (!HEADER_NAME.test(name)) return `«${name.slice(0, 30)}» no es un nombre de cabecera.`;
+      if (!value) return `Falta el valor de «${name}».`;
+      if (!HEADER_VALUE.test(value)) {
+        return `El valor de «${name}» lleva caracteres que no caben en una cabecera.`;
+      }
+      out[name] = value;
+    }
+
+    if (Object.keys(out).length > MAX_HEADERS) return `Como máximo ${MAX_HEADERS} cabeceras.`;
+    return out;
+  }
+
+  /**
+   * Cómo pide la clave esa API y qué cabeceras más quiere.
+   *
+   * Va detrás de un pliegue porque casi nadie lo necesita: con nombre, URL y clave
+   * se añade el 90 % de las APIs. El 10 % restante —Azure, el formato de
+   * Anthropic, una pasarela que enruta por una cabecera propia— era, hasta ahora,
+   * imposible de añadir. Es lo que `reference/kilocode-main` resuelve con un
+   * `options.headers` libre en su proveedor propio.
+   *
+   * El pliegue empieza abierto si ya hay algo puesto: si no, lo que se configuró
+   * una vez quedaría escondido.
+   */
+  function buildAdvanced(entry: CustomProvider): HTMLElement {
+    if (entry.keyHeader || Object.keys(entry.headers ?? {}).length > 0) advanced = true;
+
+    const holder = el("div", { class: "pnl__block" });
+    const toggle = el("button", {
+      class: "btn btn--quiet",
+      attrs: { type: "button", "aria-expanded": "false" },
+      on: { click: () => { advanced = !advanced; paint(); } },
+    });
+
+    function paint(): void {
+      toggle.textContent = (advanced ? "− " : "＋ ") + "Autenticación y cabeceras";
+      toggle.setAttribute("aria-expanded", advanced ? "true" : "false");
+      // `pnl__block` es `display: flex`, que gana a `[hidden]`: el pliegue se
+      // cierra vaciando el contenedor, no ocultándolo.
+      if (advanced) render(holder, ...inside());
+      else render(holder);
+    }
+
+    function inside(): HTMLElement[] {
+      const known = KEY_HEADERS.some((option) => option.value === entry.keyHeader);
+      const current = entry.keyHeader ? (known ? entry.keyHeader : OTHER) : "";
+
+      const named = el("input", {
+        class: "search__input",
+        attrs: {
+          type: "text", value: known ? "" : entry.keyHeader ?? "", placeholder: "x-mi-clave",
+          autocomplete: "off", spellcheck: false, "aria-label": "Nombre de la cabecera de la clave",
+        },
+      });
+      const namedHolder = el("div");
+      const namedRow = el("div", { class: "pnl__row" }, [
+        el("div", { class: "search" }, [named]),
+        el("button", {
+          class: "btn btn--quiet", text: "Guardar", attrs: { type: "button" },
+          on: { click: () => { saveKeyHeader(named.value.trim()); } },
+        }),
+      ]);
+
+      const choice = el("select", {
+        class: "sel",
+        attrs: { "aria-label": "Dónde va la clave" },
+        on: {
+          change: () => {
+            if (choice.value === OTHER) render(namedHolder, namedRow);
+            else { render(namedHolder); saveKeyHeader(choice.value); }
+          },
+        },
+      }, KEY_HEADERS.map((option) => el("option", {
+        text: option.text, attrs: { value: option.value },
+      })));
+      choice.value = current;
+
+      if (current === OTHER) render(namedHolder, namedRow);
+
+      const text = el("textarea", {
+        class: "tarea",
+        text: printHeaders(entry),
+        attrs: {
+          rows: 3, spellcheck: false, placeholder: "x-proyecto: 3i",
+          "aria-label": "Cabeceras extra",
+        },
+      });
+
+      return [
+        el("p", { class: "pnl__note" }, [
+          "Sólo hace falta si esa API no usa el ", el("code", { text: "Bearer" }),
+          " de siempre o pide alguna cabecera suya.",
+        ]),
+        el("div", { class: "pnl__row" }, [choice]),
+        namedHolder,
+        el("p", { class: "pnl__note" }, [
+          "Cabeceras extra, una por línea, como ", el("code", { text: "Nombre: valor" }), ".",
+        ]),
+        text,
+        el("div", { class: "pnl__row" }, [
+          el("button", {
+            class: "btn btn--quiet", text: "Guardar cabeceras", attrs: { type: "button" },
+            on: { click: () => { saveHeaders(text.value); } },
+          }),
+        ]),
+      ];
+    }
+
+    function saveKeyHeader(name: string): void {
+      if (name && !HEADER_NAME.test(name)) {
+        say(`«${name.slice(0, 30)}» no es un nombre de cabecera.`, true);
+        return;
+      }
+      updateCustomProvider(entry.id, { keyHeader: name });
+      // El catálogo guardado se leyó con la autenticación anterior.
+      forgetCatalog(entry.id);
+      say(name ? `La clave irá en «${name}».` : "La clave irá en Authorization: Bearer.");
+    }
+
+    function saveHeaders(raw: string): void {
+      const parsed = parseHeaders(raw);
+      if (typeof parsed === "string") { say(parsed, true); return; }
+      updateCustomProvider(entry.id, { headers: parsed });
+      forgetCatalog(entry.id);
+      const count = Object.keys(parsed).length;
+      say(count === 0
+        ? "Sin cabeceras extra."
+        : `${count} ${count === 1 ? "cabecera" : "cabeceras"} guardadas.`);
+    }
+
+    paint();
+    return el("div", { class: "pnl__block" }, [
+      el("div", { class: "pnl__row" }, [toggle]),
+      holder,
+    ]);
+  }
+
   /** Falso si el proveedor ya no existe: otra ventana pudo haberlo quitado. */
   function buildCustomForm(provider: ProviderId): boolean {
     const entry = customProvider(provider);
@@ -221,6 +404,7 @@ export function mountAiSettings(container: HTMLElement): void {
         el("div", { class: "search" }, [url]),
         saveUrl,
       ]),
+      buildAdvanced(entry),
       el("div", { class: "pnl__row" }, [
         el("button", {
           class: "btn btn--quiet",
@@ -642,15 +826,93 @@ export function mountAiSettings(container: HTMLElement): void {
       },
     });
 
+
+    /**
+     * El identificador escrito a mano.
+     *
+     * El desplegable sale de lo que el proveedor publique en `/models`, y hay
+     * pasarelas que no publican nada o publican una lista que no sirve. Hasta
+     * ahora eso dejaba el proveedor inservible aunque funcionara: sin modelo no se
+     * puede preguntar. `reference/kilocode-main` lo tiene al revés —los modelos los
+     * escribe la persona y el descubrimiento es sólo una ayuda—, y esa es la parte
+     * que faltaba aquí. Lo que se manda es esto; el desplegable es la comodidad.
+     */
+    const manual = el("input", {
+      class: "search__input",
+      attrs: {
+        type: "text", placeholder: "o escríbelo: deepseek-chat",
+        autocomplete: "off", spellcheck: false, "aria-label": "Identificador del modelo",
+      },
+      on: {
+        keydown: (event) => {
+          if (event.key !== "Enter") return;
+          event.preventDefault();
+          use();
+        },
+      },
+    });
+
+    function use(): void {
+      const id = manual.value.trim();
+      if (!id) { say("Escribe el identificador del modelo.", true); return; }
+      setModel(provider, id);
+      manual.value = "";
+      // El repintado no llega —el modelo no está en la firma—, así que el
+      // desplegable se refresca aquí: `fill` pone delante el modelo elegido.
+      show();
+      say(`Modelo «${id}» elegido.`);
+    }
+
+    const probe = el("button", {
+      class: "btn btn--quiet",
+      text: "Probar conexión",
+      attrs: { type: "button" },
+      on: {
+        click: () => {
+          void test();
+        },
+      },
+    });
+
+    /**
+     * Una pregunta mínima de verdad. Comprueba lo que el catálogo no comprueba: un
+     * `GET /models` que funciona no dice nada de que el `POST` del chat funcione
+     * —pasó con una pasarela detrás de Cloudflare, que contestaba 403 sólo al
+     * segundo—, y ese fallo aparecía al preguntar lo primero, no al configurar.
+     */
+    async function test(): Promise<void> {
+      const model = chosenModel(provider) || select.value;
+      if (!model) { say("Elige o escribe un modelo primero.", true); return; }
+
+      probe.disabled = true;
+      say(`Probando ${model}…`);
+      try {
+        const reply = await probeChat({ provider, model, signal: AbortSignal.timeout(PROBE_MS) });
+        say(reply ? `Contesta. Dijo: «${reply}»` : "Contesta, pero con un mensaje vacío.");
+      } catch (error) {
+        say(error instanceof DOMException && error.name === "TimeoutError"
+          ? "No contestó a tiempo."
+          : error instanceof Error ? error.message : "No se pudo probar.", true);
+      } finally {
+        probe.disabled = false;
+      }
+    }
+
     function show(): void {
       const needle = filter.value.trim().toLowerCase();
       const visible = all.filter((model) => matches(model, needle));
 
-      if (visible.length === 0) {
+      const chosen = chosenModel(provider);
+      if (visible.length === 0 && all.length === 0 && chosen) {
+        render(select, el("option", { text: `${chosen} (escrito)`, attrs: { value: chosen } }));
+      } else if (visible.length === 0) {
         render(select, el("option", { text: "Nada coincide", attrs: { value: "" } }));
       } else {
         fill(select, provider, visible);
       }
+
+      // Sin catálogo, el aviso que ya hay puesto explica más que «0 modelos».
+      if (all.length === 0) return;
 
       note.textContent = needle
         ? `${visible.length} de ${all.length} modelos.`
@@ -725,6 +987,21 @@ export function mountAiSettings(container: HTMLElement): void {
       el("div", { class: "pnl__row" }, [select, refresh]),
       filterHolder,
       note,
+      ...(isCustom(provider)
+        ? [
+          el("div", { class: "pnl__row" }, [
+            el("div", { class: "search" }, [manual]),
+            el("button", {
+              class: "btn btn--quiet", text: "Usar", attrs: { type: "button" },
+              on: { click: () => { use(); } },
+            }),
+            probe,
+          ]),
+          el("p", { class: "pnl__note", text:
+            "Si tu API no publica su lista, o publica una que no sirve, escribe el " +
+            "identificador tal como lo pida su documentación: es lo que se manda." }),
+        ]
+        : []),
     );
     void load(false);
   }
@@ -740,14 +1017,21 @@ export function mountAiSettings(container: HTMLElement): void {
     const provider = activeProvider();
     const entry = isCustom(provider) ? customProvider(provider) : null;
 
-    // Lo que cambia el pintado: el modo, el proveedor, si hay clave y su URL.
-    // Sin esta firma, guardar la clave repintaría el catálogo entero.
-    const signature = [mode, provider, browserKey(provider) ?? "", entry?.baseUrl ?? ""].join("|");
+    // Lo que cambia el pintado: el modo, el proveedor, si hay clave, su URL y cómo
+    // se autentica. Sin esta firma, guardar la clave repintaría el catálogo entero.
+    // El modelo elegido no está a propósito: escribirlo a mano no debe repintar.
+    const signature = [
+      mode, provider, browserKey(provider) ?? "", entry?.baseUrl ?? "",
+      entry?.keyHeader ?? "", JSON.stringify(entry?.headers ?? {}),
+    ].join("|");
     if (signature === shown) { markSeg(); return; }
 
     // Cambiar de proveedor abandona una espera de GitHub a medias; guardar la
     // credencial, no: ese repintado es justo el final del flujo.
-    if (provider !== shownProvider) waiting?.abort();
+    if (provider !== shownProvider) {
+      waiting?.abort();
+      advanced = false;
+    }
 
     shown = signature;
     shownProvider = provider;

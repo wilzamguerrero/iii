@@ -419,6 +419,13 @@ guardar o quitar la clave, conectar la cuenta de GitHub por alta de dispositivo 
 modelo del catálogo real del proveedor, con una hora de caché y un botón para releerlo.
 Streaming SSE con cancelación.
 
+**Añadir un proveedor cualquiera** es parte de esos ajustes, no una pantalla aparte: nombre,
+URL base, clave opcional, y —desplegando «Autenticación y cabeceras»— la cabecera por la que
+viaja la clave y hasta ocho cabeceras propias. El modelo se elige del catálogo o **se
+escribe**, para que una API sin `/models` siga sirviendo. «Probar conexión» manda una
+pregunta mínima de verdad y dice qué contestó. Lo portado de kilocode y lo dejado fuera
+—formato de Anthropic, indirección `{env:VARIABLE}`— está en §12 D3.
+
 **Contexto del documento**, que es lo que hace que "vea la información": la intención
 declarada, el proyecto y la página abiertos y su contenido recortado a 12 000 caracteres.
 Va como mensaje `system` aparte y se reconstruye en cada envío, para que abrir otra página
@@ -644,6 +651,47 @@ Ninguno queda bloqueado por las decisiones de este plan.
    (`api/_registry.ts`, seis horas de caché) sólo completa metadatos o hace de respaldo
    cuando la API no tiene `/models`; `source` dice de dónde salió la lista. Ninguna lista
    de modelos vive en el repositorio.
+
+   **Segunda ampliación (2026-09-05): lo que se trajo de kilocode.** Se revisó
+   `reference/kilocode-main` —una extensión de VS Code con casi cincuenta proveedores— para
+   ver si su forma de añadir APIs era mejor que la de opencode, la referencia anterior. Su
+   ventaja no está en el descubrimiento, que es peor que el nuestro, sino en no depender de
+   él: en kilocode el modelo **se escribe** y la lista es una ayuda. Cuatro cosas se
+   portaron, y todas viven sólo en el destino `custom`:
+
+   - **Cabeceras propias.** Hasta ocho pares `Nombre: valor` por proveedor. Las revisa
+     `safeHeaders` en el servidor —nombre de `token` HTTP, valor ASCII imprimible, tope de
+     tamaño— y rechaza las que gobiernan la conexión o el cuerpo (`Host`, `Content-Length`,
+     `Content-Type`, `Cookie`, `Transfer-Encoding`…). Van al final del bloque de cabeceras a
+     propósito: es lo que permite un `Authorization` con otro esquema sin que el endpoint
+     tenga que conocer cada pasarela.
+   - **La cabecera de la clave se elige.** `Authorization: Bearer` por omisión, `api-key`
+     para Azure, `x-api-key` para quien copie el estilo de Anthropic, o cualquier nombre
+     válido. Antes, una API que no leyera `Bearer` era inservible aunque estuviera bien
+     configurada.
+   - **El modelo se puede escribir a mano.** Un proveedor sin `/models`, o cuyo `/models`
+     devuelve algo que no sirve, deja de ser un callejón sin salida.
+   - **Tiempos de espera.** Quince segundos por destino al pedir el catálogo (kilocode usa
+     los mismos quince) y ciento veinte para una respuesta sin flujo. El flujo no lleva
+     tope: una respuesta larga no se corta.
+
+   Y una quinta, que es nuestra: **«Probar conexión»**, que manda una pregunta mínima de
+   verdad por el mismo camino que una real. Nace del caso que se vivió configurando una
+   pasarela: su `GET /v1/models` funcionaba —cuatro modelos en la lista, todo con aspecto de
+   estar bien— y su `POST /v1/chat/completions` devolvía 403 desde Cloudflare. Eso se
+   descubría al preguntar lo primero; ahora se descubre al configurar.
+
+   **Lo que no se portó, y por qué.** (a) El **formato de Anthropic** (`/v1/messages`): las
+   cabeceras y el modelo escrito no arreglan un cuerpo distinto, un `system` que va aparte,
+   un `max_tokens` obligatorio y un flujo con otros eventos. Es una segunda traducción
+   —cuerpo y SSE— en el servidor, y quien quiera Claude ya lo tiene por OpenRouter o por
+   cualquier pasarela que sirva esos modelos en el camino de OpenAI. Queda anotado como
+   trabajo posible, no como falta. (b) La **indirección `{env:VARIABLE}`** de kilocode, que
+   deja escribir el nombre de una variable de entorno en vez de la clave. Allí es inofensiva
+   —la extensión corre en el ordenador de quien la usa—; aquí el servidor es compartido, y
+   una variable elegida desde el navegador junto a una URL elegida desde el navegador es un
+   camino para sacar los secretos del despliegue hacia el destino que quiera quien pregunte.
+   **No debe portarse.**
 4. ~~**D4 — Vercel** como destino de despliegue.~~ **Aplicada en la Fase 0** (`vercel.json`).
 5. **La tabla de naturaleza → herramientas de §6.2** es una propuesta derivada del catálogo
    del Documento Maestro. Conviene revisarla con Edison antes de la Fase 7, porque de ella
@@ -688,9 +736,12 @@ Lo que hay en pie:
   confirmación en el propio botón, abrir un documento —que es lo que el asistente pasa a
   ver—.
 - **IA**: tres proveedores de casa más los que la persona añada («＋ Otro»: cualquier API
-  con el formato de OpenAI, con la URL filtrada en el servidor), clave por navegador o por
+  con el formato de OpenAI, con la URL filtrada en el servidor, la cabecera de la clave a
+  elegir y hasta ocho cabeceras propias revisadas en el servidor), clave por navegador o por
   entorno, alta por dispositivo para GitHub, y catálogo pedido al proveedor —completado por
-  el registro de models.dev— con caché de una hora. No hay ninguna lista de modelos escrita.
+  el registro de models.dev— con caché de una hora, quince segundos de espera por destino y
+  el modelo escrito a mano si esa API no lo publica. «Probar conexión» manda una pregunta
+  mínima de verdad antes de que haga falta. No hay ninguna lista de modelos escrita.
   Todo eso se configura **dentro de la ventana del asistente**, en «Ajustes».
 - **El asistente**: tirador de papel y ventana, los dos arrastrables y persistentes; el
   hilo de la conversación fuera de la interfaz; el sistema 3i escrito para preguntar.
@@ -708,7 +759,13 @@ navegador de quien lo usa:
    de OpenRouter, o conectar la
    cuenta de GitHub con el código que aparece. Después, abrir una página y preguntarle qué
    le falta: si responde citando lo que hay escrito, el contexto funciona.
-3. **Los cinco actos de la intro**, que el código no demuestra por no haber cambiado.
+3. **Un proveedor añadido a mano contra su API real.** El servidor se probó con un eco
+   local: las cabeceras llegan como se escribieron, las prohibidas se rechazan con 400 y el
+   corte de quince segundos salta. Lo que no se puede probar sin la cuenta de alguien es la
+   vuelta completa en el navegador: añadir la API, desplegar «Autenticación y cabeceras»,
+   elegir `api-key` o `x-api-key` si toca, guardar, ver el catálogo o escribir el modelo, y
+   «Probar conexión» hasta que conteste.
+4. **Los cinco actos de la intro**, que el código no demuestra por no haber cambiado.
 
 **Siguiente: Fase 3 — editor tipo Notion.** Es la que falta para que la plataforma escriba
 y no sólo lea: hoy una página se abre para que el asistente la vea, pero el texto se sigue

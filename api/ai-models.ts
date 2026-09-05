@@ -18,7 +18,7 @@
 
 import type { ApiHandler } from "./_types.ts";
 import {
-  describe, explainBody, fetchWithFallback, noStore, readTarget, resolveKey,
+  authHeaders, describe, explainBody, fetchWithFallback, noStore, readTarget, resolveKey,
   type Target,
 } from "./_ai.ts";
 import { registryByApi, registryProvider, type RegistryProvider } from "./_registry.ts";
@@ -210,12 +210,19 @@ const handler: ApiHandler = async (req, res) => {
     return;
   }
 
-  const headers: Record<string, string> = { Accept: "application/json", ...target.headers };
-  if (key) headers.Authorization = `Bearer ${key}`;
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    ...authHeaders(key, target),
+    ...target.headers,
+    ...target.extra,
+  };
 
   try {
     const upstream = await fetchWithFallback(target.modelUrls, { headers }, {
       noRedirect: target.custom,
+      // Quince segundos por destino: es un catálogo, y quien está mirando los
+      // ajustes no puede quedarse con «Cargando…» hasta que la plataforma corte.
+      timeoutMs: 15_000,
     });
     const payload = upstream.ok ? await upstream.json().catch(() => null) : null;
 
