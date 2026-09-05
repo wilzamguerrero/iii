@@ -24,7 +24,7 @@ Live Server*).
 
 | acto     | qué pasa                                                             |
 |----------|----------------------------------------------------------------------|
-| `enter`  | llega desde el fondo en una S descendente, acelerando               |
+| `enter`  | llega desde el fondo en un viraje largo, descendiendo y acelerando   |
 | `pass`   | sigue de largo rozando la frase, que sube en su estela, y sale      |
 | `gone`   | fuera de cuadro; la frase se queda sola y legible                   |
 | `attack` | vuelve a entrar por el lado por donde salió y barre las palabras    |
@@ -33,6 +33,10 @@ Live Server*).
 Nunca se detiene ni gira en seco. Cada acto arranca con la posición y el rumbo
 con que terminó el anterior, y ninguna curva frena a cero por el camino: los
 *easings* son perfiles de velocidad, no de posición.
+
+Los actos también se encadenan *dentro* del fotograma: lo que sobra del tiempo
+de uno es lo que lleva andado el siguiente. Descartarlo dejaba un fotograma
+repetido en cada empalme, y de ahí salía un latigazo del morro al reanudar.
 
 ## Nada va por reloj
 
@@ -73,6 +77,12 @@ Dos decisiones que no se ven en el código y conviene no deshacer sin querer:
 - **El canvas es transparente y el blanco lo pone el CSS.** No hay *tone
   mapping*: el papel se lee por su sombreado, no por su brillo. Subir la
   exposición lo vuelve invisible.
+- **La llegada y la pasada comparten un punto y un rumbo**, no sólo el punto.
+  La tangente de una `CatmullRomCurve3` abierta en su extremo es exactamente su
+  último tramo, así que el penúltimo punto de la llegada va sobre la recta del
+  rumbo (`onRay(-1.6)`) y el segundo de la pasada también (`onRay(0.36)`). Mover
+  cualquiera de los dos fuera de esa recta devuelve el giro brusco en el
+  empalme: cada trazo llegaría al punto común con su propio rumbo.
 
 ## Qué se puede tocar
 

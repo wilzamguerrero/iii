@@ -150,26 +150,46 @@ export class Choreography {
       return { cfg, plane, flyer: new Flyer(), phase: R() * 6.283, born: cfg.born, target: new THREE.Vector3() };
     });
 
-    // Llegada: del fondo hasta justo antes de la primera palabra.
+    // El empalme entre la llegada y la pasada no es un punto: es un punto y un
+    // rumbo. Aquí vivía el latigazo —cada trazo llegaba al punto común con el
+    // suyo y en el fotograma del cambio el morro giraba 28° de golpe—. La
+    // tangente de una CatmullRom abierta en su extremo es exactamente su último
+    // tramo, así que poniendo el penúltimo punto de la llegada sobre la recta
+    // del rumbo las dos curvas entran y salen en la misma dirección por
+    // construcción, no por buen pulso al escribir las coordenadas.
+    const join = new THREE.Vector3(-4.4 * -SWEEP, 1.05, -3.6);
+    const heading = new THREE.Vector3(0.435 * -SWEEP, -0.122, 0.892);
+    const onRay = (d) => join.clone().addScaledVector(heading, d);
+
+    // Llegada: del fondo hasta justo antes de la primera palabra. Vira siempre
+    // hacia el mismo lado —rumbos 10°, 17°, 26°— para que el alabeo no tenga
+    // que deshacerse a mitad de camino y volver a hacerse.
     this.entry = new THREE.CatmullRomCurve3(
       [
-        new THREE.Vector3(-9.8 * -SWEEP, 4.4, -25),
-        new THREE.Vector3(-6.6 * -SWEEP, 3.2, -17),
-        new THREE.Vector3(-4.9 * -SWEEP, 1.85, -9.2),
-        new THREE.Vector3(-4.4 * -SWEEP, 1.05, -3.6),
+        new THREE.Vector3(-9.74 * -SWEEP, 5.32, -24.42),
+        new THREE.Vector3(-7.98 * -SWEEP, 2.98, -14.45),
+        onRay(-1.6),
+        join,
       ],
       false, "centripetal", 0.5
     );
 
     // Pasada: roza la línea de texto de un extremo a otro y sigue hasta salir
     // de cuadro. Es el mismo trazo, sin frenar: la frase sube en su estela.
+    // El viraje de 26° a 90° es un arco de radio constante repartido en pasos
+    // que se abren poco a poco (6°, 10°, 14°, 17°, 17°): el primero es corto a
+    // propósito, para que el rumbo con que arranca coincida con el que traía.
     this.passPath = new THREE.CatmullRomCurve3(
       [
-        new THREE.Vector3(-4.4 * -SWEEP, 1.05, -3.6),
-        new THREE.Vector3(-3.3 * -SWEEP, 0.8, -1.95),
-        new THREE.Vector3(0, 0.76, -1.75),
-        new THREE.Vector3(3.4 * -SWEEP, 0.84, -1.95),
-        new THREE.Vector3(7.4 * -SWEEP, 1.35, -2.8),
+        join,
+        onRay(0.36),
+        new THREE.Vector3(-3.89 * -SWEEP, 0.92, -2.84),
+        new THREE.Vector3(-3.28 * -SWEEP, 0.87, -2.31),
+        new THREE.Vector3(-2.40 * -SWEEP, 0.82, -1.89),
+        new THREE.Vector3(-1.44 * -SWEEP, 0.78, -1.75),
+        new THREE.Vector3(1.20 * -SWEEP, 0.79, -1.80),
+        new THREE.Vector3(4.20 * -SWEEP, 0.90, -2.20),
+        new THREE.Vector3(8.00 * -SWEEP, 1.45, -3.10),
         new THREE.Vector3(14.5 * -SWEEP, 2.6, -5.0),
       ],
       false, "centripetal", 0.5
@@ -319,9 +339,11 @@ export class Choreography {
     return 0.88 * ease.outQuad(p) + 0.12 * p;
   }
 
-  update(t, dt) {
-    this.stateT += dt;
-
+  /**
+   * Un acto. Devuelve `true` si se ha terminado y hay que encadenar el
+   * siguiente en este mismo fotograma.
+   */
+  advance(t, dt) {
     switch (this.state) {
       case "enter": {
         const p = clamp(this.stateT / TIME.enter, 0, 1);
@@ -329,7 +351,8 @@ export class Choreography {
         // Sin corte: la pasada arranca donde acaba la llegada y con su rumbo.
         if (p >= 1) {
           this.state = "pass";
-          this.stateT = 0;
+          this.stateT -= TIME.enter;
+          return true;
         }
         break;
       }
@@ -338,7 +361,7 @@ export class Choreography {
         this.passPath.getPointAt(Choreography.passEase(p), this.pos);
         if (p >= 1) {
           this.state = "gone";
-          this.stateT = 0;
+          this.stateT -= TIME.pass;
         }
         break;
       }
@@ -347,7 +370,8 @@ export class Choreography {
         if (!this.reduced && t >= this.sweepAt) {
           this.buildAttack();
           this.state = "attack";
-          this.stateT = 0;
+          this.stateT = 0; // «gone» dura lo que haga falta: no hay sobrante
+          return true;
         }
         break;
       }
@@ -358,7 +382,8 @@ export class Choreography {
           this.hero.mesh.visible = false;
           this.buildCharge();
           this.state = "charge";
-          this.stateT = 0;
+          this.stateT -= TIME.attackDur;
+          return true;
         }
         break;
       }
@@ -380,6 +405,16 @@ export class Choreography {
       default:
         break;
     }
+    return false;
+  }
+
+  update(t, dt) {
+    this.stateT += dt;
+    // Los actos se encadenan dentro del mismo fotograma: lo que sobra de uno es
+    // lo que lleva andado el siguiente. Al descartarlo quedaba un fotograma
+    // repetido en cada empalme —el avión clavado en el sitio— y al reanudar el
+    // morro daba un latigazo para recuperar el rumbo perdido.
+    for (let guard = 4; guard > 0 && this.advance(t, dt); guard--);
 
     if (this.state !== "done" && this.state !== "charge") {
       const sway = noise1(t * 0.7 + 1.3, 4) * 0.05;

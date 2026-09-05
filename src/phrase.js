@@ -181,14 +181,24 @@ export class Phrase {
       if (vlen > 160) {
         const ux = hero.vx / vlen;
         const uy = hero.vy / vlen;
+        // El avión no está en un punto: en el barrido cruza cientos de píxeles
+        // por fotograma, más que la ventana de golpeo entera. Muestreándolo
+        // como un punto había palabras que caían justo entre dos fotogramas y
+        // nunca recibían el empujón: se quedaban quietas mientras las demás
+        // volaban y sólo se iban después, con el barrido de reserva. La ventana
+        // se estira por detrás con lo volado desde el fotograma anterior —el
+        // tramo que el avión ya recorrió—, así que el barrido es continuo y no
+        // se escapa ninguna. Estirar por delante, en cambio, golpearía antes de
+        // llegar.
+        const travel = vlen * dt;
         for (const w of this.words) {
+          if (w.hit) continue;
           const dx = w.cx0 + w.x - hero.x;
           const dy = w.cy0 + w.y - hero.y;
           const along = dx * ux + dy * uy;
           const perp = dx * -uy + dy * ux;
 
-          if (w.hit) continue;
-          if (along < 70 && along > -240 && Math.abs(perp) < radius) {
+          if (along < 70 && along > -240 - travel && Math.abs(perp) < radius) {
             this.impulse(w, ux, uy, perp, radius);
           } else {
             // Anticipación: la palabra nota el aire antes del golpe.
