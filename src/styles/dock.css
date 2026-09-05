@@ -1,0 +1,549 @@
+/* ==========================================================================
+   Franja inferior: Proyectos · Notion · IA  (plan.md §5, Fase 1)
+
+   Retráctil porque la pantalla de inicio es una pregunta y nada más. Cerrada
+   deja un filo y una etiqueta; abierta ocupa el tercio de abajo y empuja el
+   formulario hacia arriba en vez de taparlo.
+
+   z-index 7: por encima del grano (5) y del botón de saltar (6). El lienzo (2)
+   sigue debajo, así que el avión de fondo continúa derivando detrás del panel.
+   ========================================================================== */
+
+/* En :root y no en .dock: la capa del menú también necesita leer la altura
+   para recentrarse, y no es descendiente de la franja. */
+:root { --dock-h: min(340px, 46vh); }
+
+.dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 7;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  border-top: 1px solid var(--ink-line);
+  /* Cerrada se desplaza justo lo que mide el cuerpo: el asa queda a ras del
+     borde inferior y el resto sale de cuadro. */
+  transform: translateY(var(--dock-h));
+  transition: transform 0.62s var(--out-expo);
+}
+
+.dock[data-open="true"] { transform: none; }
+
+/* Entrada: la franja aparece cuando ya está el menú, no durante la intro. */
+.dock[hidden] { display: none; }
+.dock.is-in { animation: dock-in 0.7s var(--out-expo) both; }
+
+@keyframes dock-in {
+  from { opacity: 0; transform: translateY(calc(var(--dock-h) + 100%)); }
+  to   { opacity: 1; transform: translateY(var(--dock-h)); }
+}
+
+/* --- asa ---------------------------------------------------------------- */
+
+.dock__handle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  padding: 0.62rem clamp(1rem, 4vw, 2.25rem);
+  border: 0;
+  background: transparent;
+  color: var(--ink-soft);
+  font-family: inherit;
+  font-size: 0.66rem;
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 0.3s ease;
+}
+
+.dock__handle:hover,
+.dock__handle:focus-visible { color: var(--ink); }
+.dock__handle:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: -3px; }
+
+.dock__chev {
+  width: 9px;
+  height: 9px;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  transform: rotate(-135deg);
+  transition: transform 0.5s var(--out-expo);
+}
+
+.dock[data-open="true"] .dock__chev { transform: rotate(45deg) translate(-1px, -1px); }
+
+/* --- cuerpo ------------------------------------------------------------- */
+
+.dock__body {
+  height: var(--dock-h);
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--ink-line);
+}
+
+.dock__tabs {
+  display: flex;
+  gap: clamp(1.1rem, 3vw, 2rem);
+  padding: 0 clamp(1rem, 4vw, 2.25rem);
+  border-bottom: 1px solid var(--ink-line);
+  flex: 0 0 auto;
+}
+
+.dock__tab {
+  position: relative;
+  border: 0;
+  background: transparent;
+  padding: 0.85rem 0.1rem;
+  color: var(--ink-soft);
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 0.3s ease;
+}
+
+.dock__tab::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: var(--ink);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.45s var(--out-expo);
+}
+
+.dock__tab:hover { color: var(--ink); }
+.dock__tab[aria-selected="true"] { color: var(--ink); }
+.dock__tab[aria-selected="true"]::after { transform: scaleX(1); }
+.dock__tab:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: 2px; }
+
+.dock__panes {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: clamp(1rem, 2.6vh, 1.6rem) clamp(1rem, 4vw, 2.25rem) 1.6rem;
+}
+
+.dock__pane[hidden] { display: none; }
+
+/* El formulario está centrado en la pantalla; abierta la franja, se recentra
+   sobre el espacio que queda. Sólo se mueve la capa del menú: mover `.stage`
+   arrastraría el lienzo y con él el punto de vista de la escena. */
+body[data-dock="open"] .menu {
+  padding-bottom: calc(6vh + var(--dock-h));
+  transition: padding-bottom 0.62s var(--out-expo);
+}
+
+@media (max-width: 620px) {
+  :root { --dock-h: min(330px, 64vh); }
+  .dock__tabs { gap: 1.1rem; }
+  .dock__tab { font-size: 0.68rem; letter-spacing: 0.1em; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dock,
+  .dock__chev,
+  .dock__tab::after,
+  body[data-dock="open"] .menu { transition-duration: 0.01ms; }
+  .dock.is-in { animation: none; }
+}
+
+/* ==========================================================================
+   Piezas de dentro del panel.
+
+   Son los primitivos que reutilizarán las fases siguientes —el editor, el
+   asistente, el árbol de proyectos—, así que se nombran por lo que son y no por
+   dónde están hoy.
+   ========================================================================== */
+
+.pnl {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  max-width: 640px;
+}
+
+.pnl__lead {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 300;
+  line-height: 1.55;
+  color: var(--ink);
+}
+
+.pnl__lead em { font-family: var(--serif); font-style: italic; }
+
+.pnl__note {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 300;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+.pnl__note code {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.94em;
+  background: rgba(20, 23, 28, 0.045);
+  padding: 0.1em 0.35em;
+  border-radius: 2px;
+}
+
+.pnl__row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.pnl__sep {
+  height: 1px;
+  background: var(--ink-line);
+  border: 0;
+  margin: 0.35rem 0;
+}
+
+/* --- botones ------------------------------------------------------------- */
+
+.btn {
+  border: 1px solid var(--ink-line);
+  background: transparent;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.62rem 1.15rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: border-color 0.3s ease, color 0.3s ease, opacity 0.3s ease;
+}
+
+.btn:hover:not(:disabled) { border-color: var(--ink); }
+.btn:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: 2px; }
+.btn:disabled { opacity: 0.45; cursor: default; }
+
+.btn--quiet {
+  border-color: transparent;
+  color: var(--ink-soft);
+  padding-inline: 0.35rem;
+}
+
+.btn--quiet:hover:not(:disabled) { color: var(--ink); border-color: transparent; }
+
+/* --- identidad del espacio ---------------------------------------------- */
+
+.ws { display: flex; align-items: center; gap: 0.6rem; min-width: 0; }
+
+.ws__icon {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  border-radius: 3px;
+  object-fit: cover;
+  background: rgba(20, 23, 28, 0.05);
+}
+
+.ws__name {
+  font-size: 0.92rem;
+  font-weight: 300;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- buscador y lista de páginas ---------------------------------------- */
+
+.search {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--ink-line);
+  gap: 0.5rem;
+}
+
+.search__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 0.92rem;
+  font-weight: 300;
+  padding: 0.6rem 0.1rem;
+}
+
+.search__input::placeholder { color: rgba(20, 23, 28, 0.3); }
+.search__input:focus { outline: none; }
+
+.plist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+
+.plist__btn {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-bottom: 1px solid var(--ink-line);
+  background: transparent;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 0.88rem;
+  font-weight: 300;
+  padding: 0.62rem 0.1rem;
+  cursor: pointer;
+  transition: background-color 0.25s ease;
+}
+
+.plist__btn:hover { background: rgba(20, 23, 28, 0.028); }
+.plist__btn:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: -1px; }
+
+.plist__btn[aria-current="true"] { font-weight: 400; }
+
+.plist__title { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.plist__mark {
+  flex: 0 0 auto;
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+/* --- mensajes ------------------------------------------------------------ */
+
+.msg {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 300;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+/* El color no es el único indicio: el texto de un fallo empieza diciendo que
+   algo falló. Con esto se lee igual sin distinguir colores. */
+.msg--bad { color: #a3341f; }
+
+/* --- árbol de proyectos (Fase 2) ---------------------------------------- */
+
+/* Un proyecto es una fila que se despliega; una página, una fila que se abre.
+   Nada de iconos: una punta de flecha para lo que contiene y un punto para lo
+   que se lee. Las acciones sólo aparecen cuando el puntero o el foco están en
+   la fila, para que la lista se lea como una lista y no como un panel. */
+
+.tree { list-style: none; margin: 0.35rem 0 0; padding: 0; }
+.tree__item { list-style: none; }
+
+.tree__row {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  padding: 0.12rem 0.15rem;
+  border-radius: 2px;
+}
+
+.tree__row:hover { background: rgba(20, 23, 28, 0.028); }
+
+.tree__twist,
+.tree__open {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.3rem 0.1rem;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.83rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tree__twist:focus-visible,
+.tree__open:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: -1px; }
+
+.tree__caret {
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  border-right: 1px solid var(--ink-soft);
+  border-bottom: 1px solid var(--ink-soft);
+  transform: rotate(-45deg);
+  transition: transform 0.28s var(--out-quart);
+}
+
+.tree__twist[aria-expanded="true"] .tree__caret { transform: rotate(45deg); }
+
+.tree__dot {
+  flex: 0 0 auto;
+  width: 4px;
+  height: 4px;
+  margin: 0 0.5px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+}
+
+.tree__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* La página abierta va subrayada y con el punto lleno: el asistente lee esa. */
+.tree__open[aria-current="true"] .tree__name {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.tree__open[aria-current="true"] .tree__dot { background: var(--ink); }
+
+.tree__acts { display: flex; flex: 0 0 auto; gap: 0.1rem; opacity: 0; transition: opacity 0.2s ease; }
+.tree__row:hover .tree__acts,
+.tree__row:focus-within .tree__acts { opacity: 1; }
+
+.tree__act {
+  border: 0;
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 0.6rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.28rem;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.tree__act:hover { color: var(--ink); }
+.tree__act:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: 1px; }
+.tree__act--risk:hover { color: #a3341f; }
+.tree__act--risk.is-armed { color: #a3341f; letter-spacing: 0.04em; }
+
+/* Las páginas cuelgan del proyecto con una línea: es la jerarquía, dibujada. */
+.tree__kids {
+  list-style: none;
+  margin: 0 0 0.15rem 0.55rem;
+  padding-left: 0.7rem;
+  border-left: 1px solid var(--ink-line);
+}
+
+.tree__wait { padding: 0.3rem 0.2rem; color: var(--ink-soft); font-size: 0.76rem; }
+
+.tree__field {
+  width: 100%;
+  padding: 0.28rem 0.1rem;
+  border: 0;
+  border-bottom: 1px solid var(--ink-line);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.83rem;
+}
+
+.tree__field:focus { outline: none; border-bottom-color: var(--ink); }
+.tree__field::placeholder { color: rgba(20, 23, 28, 0.3); }
+
+@media (prefers-reduced-motion: reduce) {
+  .tree__caret, .tree__acts, .tree__act { transition: none; }
+  .tree__acts { opacity: 1; }
+}
+
+/* --- ajustes de IA (Fase 5) ---------------------------------------------- */
+
+.pnl__block { display: flex; flex-direction: column; gap: 0.55rem; }
+
+/* Elegir proveedor: la misma gramática que las pestañas de arriba, en pequeño.
+   Tres palabras y una línea bajo la que está activa. */
+.seg { display: flex; flex-wrap: wrap; gap: 0.1rem; border-bottom: 1px solid var(--ink-line); }
+
+.seg__btn {
+  position: relative;
+  border: 0;
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 0.7rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  padding: 0.45rem 0.7rem;
+  cursor: pointer;
+  transition: color 0.25s ease;
+}
+
+.seg__btn::after {
+  content: "";
+  position: absolute;
+  left: 0.7rem;
+  right: 0.7rem;
+  bottom: -1px;
+  height: 1px;
+  background: var(--ink);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.3s var(--out-quart);
+}
+
+.seg__btn:hover,
+.seg__btn[aria-pressed="true"] { color: var(--ink); }
+.seg__btn[aria-pressed="true"]::after { transform: scaleX(1); }
+.seg__btn:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: 2px; }
+
+/* El campo de la clave ocupa la fila; el botón se queda a su tamaño. */
+.pnl__row > .search { flex: 1 1 220px; }
+
+.sel {
+  flex: 1 1 220px;
+  min-width: 0;
+  border: 1px solid var(--ink-line);
+  border-radius: 2px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 0.5rem 0.55rem;
+  cursor: pointer;
+}
+
+.sel:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: 1px; }
+.sel:disabled { opacity: 0.55; cursor: default; }
+
+/* El código del alta por dispositivo. Se copia a mano, así que grande y
+   espaciado, y seleccionable de una pasada. */
+.pin {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 1.05rem;
+  letter-spacing: 0.2em;
+  padding: 0.5rem 0.7rem;
+  border: 1px dashed var(--ink-faint);
+  border-radius: 2px;
+  user-select: all;
+}
+
+.lnk {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+  word-break: break-all;
+}
+
+.lnk:hover { color: var(--ink-soft); }
+
+/* Un enlace que se presenta como botón necesita comportarse como uno. */
+a.btn { display: inline-flex; align-items: center; text-decoration: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .seg__btn, .seg__btn::after { transition: none; }
+}

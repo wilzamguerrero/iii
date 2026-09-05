@@ -10,14 +10,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap" />
-<link rel="stylesheet" href="./styles.css" />
+<link rel="stylesheet" href="./src/styles/app.css" />
 
 <!-- Los módulos ES no cargan desde file://. Guardia en script clásico para poder avisarlo. -->
 <script>if (location.protocol === 'file:') document.documentElement.classList.add('is-file');</script>
-
-<script type="importmap">
-{ "imports": { "three": "./vendor/three/three.module.min.js" } }
-</script>
 </head>
 <body>
 
@@ -41,6 +37,10 @@
         <span class="field__rule" aria-hidden="true"></span>
 
         <button id="send" class="send" type="submit" aria-label="Enviar intención">
+          <!-- El mismo avión está en src/ui/origami.ts, que lo dibuja para el asa
+               del asistente. Esta copia se queda porque es el primer pintado y no
+               debe esperar a que evalúe ningún módulo: si se cambia una figura,
+               se cambian las dos. -->
           <svg class="send__ori" viewBox="0 0 44 44" aria-hidden="true" focusable="false">
             <g class="ori">
               <path class="ori__f ori__f1" d="M22 3 L38.5 26 L22 20.5 Z" />
@@ -64,12 +64,11 @@
 <button id="skip" class="skip" type="button">Saltar intro</button>
 
 <div class="file-warning">
-  <p><strong>Ábrelo con un servidor local.</strong></p>
+  <p><strong>Ábrelo con el servidor de desarrollo.</strong></p>
   <p>Los módulos de JavaScript no funcionan con <code>file://</code>. Desde esta carpeta:</p>
-  <p><code>npx serve .</code> &nbsp;o&nbsp; <code>python -m http.server 5173</code></p>
-  <p>En VS Code también sirve la extensión <em>Live Server</em>.</p>
+  <p><code>npm install</code> &nbsp;y luego&nbsp; <code>npm run dev</code></p>
 </div>
 
-<script type="module" src="./src/main.js"></script>
+<script type="module" src="./src/app.ts"></script>
 </body>
 </html>

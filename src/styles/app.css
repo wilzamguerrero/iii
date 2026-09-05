@@ -1,0 +1,10 @@
+/* ============================================================
+   Punto de entrada del CSS. Una hoja por módulo, en orden de
+   cascada: primero los tokens, después cada pieza de interfaz.
+   Las fases siguientes añaden aquí su @import; el orden importa.
+   ============================================================ */
+
+@import "./tokens.css";
+@import "./intro.css";
+@import "./dock.css";
+@import "./assistant.css";

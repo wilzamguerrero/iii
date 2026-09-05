@@ -1,0 +1,21 @@
+{
+  "name": "plataforma-3i",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Plataforma para desarrollar proyectos de investigación con la metodología 3i.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "26.4.1",
+    "typescript": "7.0.2",
+    "vite": "8.2.2"
+  },
+  "engines": {
+    "node": ">=22.12"
+  }
+}

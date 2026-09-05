@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.vercel/
+
+# Secretos. El client_secret de Notion vive aquí y no puede entrar en git.
+.env
+.env.*
+!.env.example
+
+# Ruido del sistema
+.DS_Store
+Thumbs.db
+*.log
+
+# Material de consulta, no forma parte del build (ver plan.md §2).
+reference/

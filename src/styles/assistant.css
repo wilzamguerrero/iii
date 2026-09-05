@@ -1,0 +1,305 @@
+/* ==========================================================================
+   Asistente: el papel y su ventana  (plan.md §5, Fase 5)
+
+   Dos objetos sueltos sobre la página, sin anclaje. La posición la ponen
+   `drag.ts` como `left`/`top` en línea, así que aquí no se fija ninguna: sólo
+   se dice cómo son y que están por encima de todo.
+
+   z-index 8 y 9: por encima de la franja de trabajo (7), que es lo más alto de
+   la interfaz de abajo. El papel queda accesible aunque la franja esté abierta.
+   ========================================================================== */
+
+/* --- el papel ------------------------------------------------------------ */
+
+/* Es el botón de enviar de la pantalla de entrada, sin nada alrededor: la misma
+   figura de cinco caras que `origami.ts` dibuja para las dos. Sin fondo ni
+   círculo —la sombra basta para que se lea sobre el lienzo— porque lo que la
+   persona reconoce es el avión, no un contenedor. */
+
+.ai-handle {
+  position: fixed;
+  z-index: 8;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: grab;
+  touch-action: none;
+  filter: drop-shadow(0 3px 10px rgba(20, 23, 28, 0.22));
+  transition: filter 0.3s ease;
+}
+
+.ai-handle[hidden] { display: none; }
+.ai-handle.is-moving { cursor: grabbing; }
+.ai-handle:hover { filter: drop-shadow(0 5px 14px rgba(20, 23, 28, 0.3)); }
+
+.ai-handle__ori { width: 36px; height: 36px; overflow: visible; }
+
+/* El mismo despliegue de pliegues que `.send` en intro.css. Se repite aquí
+   porque allí está atado a `.send`, y la figura es la misma pero el objeto no. */
+.ai-handle:hover .ori,
+.ai-handle:focus-visible .ori { transform: rotate(-9deg) translateY(-2px) scale(1.06); }
+.ai-handle:hover .ori__f1 { transform: translate(1.1px, -1.4px); }
+.ai-handle:hover .ori__f2 { transform: translate(-1.5px, -0.9px); }
+.ai-handle:hover .ori__f3 { transform: translate(1.4px, 1.1px); }
+.ai-handle:hover .ori__f4 { transform: translate(0.2px, 1.7px); }
+.ai-handle:hover .ori__f5 { transform: translate(-1.6px, 1.2px); }
+.ai-handle:active .ori { transform: rotate(-4deg) scale(0.93); transition-duration: 0.12s; }
+
+.ai-handle:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: 4px; border-radius: 4px; }
+
+/* Abierto: el papel se inclina y se queda así, para que se vea cuál es la
+   ventana que está abierta si hay varias cosas en pantalla. */
+.ai-handle.is-on .ori { transform: rotate(-14deg) scale(0.96); }
+
+@keyframes ai-in {
+  from { opacity: 0; transform: translateY(12px) rotate(-8deg); }
+  to   { opacity: 1; transform: none; }
+}
+
+.ai-handle.is-in { animation: ai-in 0.72s var(--out-expo) both; }
+
+/* --- la ventana ---------------------------------------------------------- */
+
+.ai-pop {
+  position: fixed;
+  z-index: 9;
+  display: flex;
+  flex-direction: column;
+  width: min(380px, calc(100vw - 2rem));
+  max-height: min(62vh, 540px);
+  background: var(--paper);
+  border: 1px solid var(--ink-line);
+  border-radius: 3px;
+  box-shadow: 0 14px 40px rgba(20, 23, 28, 0.14);
+  overflow: hidden;
+}
+
+/* `display: flex` gana a `[hidden]`, que sólo pone `display: none` en el estilo
+   del navegador. Sin esta línea la ventana no se cerraría nunca. */
+.ai-pop[hidden] { display: none; }
+
+.ai-pop__grip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.55rem 0.5rem 0.8rem;
+  border-bottom: 1px solid var(--ink-line);
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.ai-pop.is-moving .ai-pop__grip { cursor: grabbing; }
+.ai-pop__grip:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: -2px; }
+
+.ai-pop__title {
+  flex: 0 0 auto;
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+/* Lo que ve, dicho en la cabecera: el asistente no mira nada a escondidas. */
+.ai-pop__ctx {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.68rem;
+  font-weight: 300;
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-pop__act {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 0.6rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  padding: 0.25rem 0.3rem;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.ai-pop__act:hover { color: var(--ink); }
+.ai-pop__act:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: 1px; }
+.ai-pop__x { font-size: 1rem; line-height: 1; padding: 0.1rem 0.35rem; }
+
+.ai-pop__log {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 0.9rem 0.9rem 1rem;
+}
+
+/* --- lo dicho ------------------------------------------------------------ */
+
+/* La respuesta va en texto corrido, sin burbuja: es un dictamen, no un chat de
+   soporte. Lo que escribe la persona sí se marca, para poder recorrer el hilo
+   de un vistazo. `pre-wrap` respeta los saltos que traiga el modelo. */
+
+.ai-turn {
+  font-size: 0.82rem;
+  font-weight: 300;
+  line-height: 1.62;
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ai-turn--mine {
+  align-self: flex-end;
+  max-width: 86%;
+  padding: 0.45rem 0.65rem;
+  background: rgba(20, 23, 28, 0.045);
+  border-radius: 3px;
+  color: var(--ink);
+}
+
+.ai-turn--wait { color: var(--ink-soft); animation: ai-pulse 1.4s ease-in-out infinite; }
+.ai-turn--bad { color: #a3341f; }
+
+@keyframes ai-pulse {
+  0%, 100% { opacity: 0.35; }
+  50%      { opacity: 1; }
+}
+
+/* --- nada dicho todavía -------------------------------------------------- */
+
+.ai-empty { display: flex; flex-direction: column; gap: 0.8rem; }
+
+.ai-empty__lead {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 300;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+.ai-seeds { display: flex; flex-direction: column; gap: 0.35rem; align-items: flex-start; }
+
+/* Las tres preguntas de arranque son del método: la intención, la naturaleza
+   de la situación y qué indagar primero. No son sugerencias de cortesía. */
+.ai-seed {
+  border: 1px solid var(--ink-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 300;
+  text-align: left;
+  padding: 0.4rem 0.7rem;
+  cursor: pointer;
+  transition: border-color 0.25s ease;
+}
+
+.ai-seed:hover { border-color: var(--ink); }
+.ai-seed:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: 2px; }
+
+/* --- preguntar ----------------------------------------------------------- */
+
+.ai-pop__ask {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.4rem;
+  padding: 0.55rem 0.6rem;
+  border-top: 1px solid var(--ink-line);
+}
+
+.ai-pop__field {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-height: 150px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 300;
+  line-height: 1.5;
+  padding: 0.35rem 0.2rem;
+  resize: none;
+  overflow-y: auto;
+}
+
+.ai-pop__field:focus { outline: none; }
+.ai-pop__field::placeholder { color: rgba(20, 23, 28, 0.32); }
+
+/* El mismo papel, más pequeño: enviar es enviar en las dos pantallas. */
+.ai-pop__send {
+  position: relative;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.ai-pop__ori { width: 26px; height: 26px; overflow: visible; }
+
+.ai-pop__send:hover .ori { transform: rotate(-9deg) translateY(-2px) scale(1.06); }
+.ai-pop__send:active .ori { transform: rotate(-4deg) scale(0.93); transition-duration: 0.12s; }
+.ai-pop__send:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: 2px; border-radius: 3px; }
+
+/* Mientras contesta, el papel se apaga y aparece el cuadrado de detener encima:
+   el mismo botón sirve para las dos cosas y no hay que buscar otro sitio. */
+.ai-pop__send.is-busy .ori { opacity: 0.28; }
+
+.ai-pop__send.is-busy::after {
+  content: "";
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  background: var(--ink);
+  border-radius: 1px;
+}
+
+.ai-pop__foot {
+  margin: 0;
+  padding: 0 0.75rem 0.6rem;
+  font-size: 0.66rem;
+  font-weight: 300;
+  color: var(--ink-soft);
+}
+
+.ai-link {
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: inherit;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+@media (max-width: 620px) {
+  .ai-pop { width: calc(100vw - 1.5rem); max-height: 66vh; }
+  .ai-handle { width: 48px; height: 48px; }
+  .ai-handle__ori { width: 40px; height: 40px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-handle, .ai-handle.is-in { transition: none; animation: none; }
+  .ai-turn--wait { animation: none; opacity: 0.6; }
+  .ai-seed, .ai-pop__act { transition: none; }
+}
