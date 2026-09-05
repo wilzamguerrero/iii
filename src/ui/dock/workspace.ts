@@ -5,7 +5,7 @@ import {
 import { beginAuthorization, fetchOAuthConfig, OAuthError } from "../../core/notion/oauth.ts";
 import { NotionRequestError, searchPages, whoAmI } from "../../core/notion/client.ts";
 import { pageTitle, type NotionPage } from "../../core/notion/types.ts";
-import { mountFolders, type Folders } from "./folders.ts";
+import { mountFolders, type Crumb, type Folders } from "./folders.ts";
 
 /**
  * El espacio de trabajo: conectar Notion, decir bajo qué página vive todo y
@@ -21,6 +21,12 @@ import { mountFolders, type Folders } from "./folders.ts";
  * carpeta es una lista desplegable y cada documento un bloque dentro (plan.md
  * D2). La elige la persona porque es su Notion, y porque la integración sólo ve
  * lo que le haya compartido.
+ *
+ * Esta pantalla se monta **una vez por pestaña** de la franja. Lo que es de la
+ * conexión —si está, si se está canjeando un código, si se pidió cambiar de
+ * raíz— vive al nivel del módulo y lo comparten todas: son hechos del espacio,
+ * no de la ventana desde la que se mira. Lo que es del recorrido —en qué carpeta
+ * está cada una— vive dentro, que es lo que hace que dos pestañas sirvan.
  *
  * Se reconstruye entera sólo cuando cambia el estado. Dentro de un mismo estado
  * se actualizan las partes sueltas: si cada cambio de sesión repintara todo,
@@ -40,51 +46,105 @@ function sharePagesHint(): HTMLElement {
   ]);
 }
 
+/* --- lo que comparten todas las pestañas ---------------------------------- */
+
 /**
  * Estado que esta pantalla comparte con el arranque de la aplicación, porque el
- * intercambio del código ocurre antes de que nadie la mire (ver src/app.ts).
- *
- * Vive al nivel del módulo y no dentro de `mountWorkspace` porque quien lo
- * escribe está fuera: la pantalla se monta una sola vez y no puede recibir el
- * resultado de un viaje que empezó en la carga anterior de la página.
+ * intercambio del código ocurre antes de que nadie la mire (ver src/app.ts), y
+ * con las demás pestañas, porque la conexión es una sola.
  */
 let notice: string | null = null;
 let pending = false;
-let repaint: (() => void) | null = null;
+/** Se pidió cambiar la raíz: lo pide una pestaña y va con todas. */
+let picking = false;
+/** El token que ya se comprobó contra Notion; no se pregunta una vez por pestaña. */
+let verified = "";
+
+const painters = new Set<() => void>();
+
+function repaintAll(): void {
+  // Copia: repintar puede montar o soltar pantallas, y el conjunto cambiaría
+  // mientras se recorre.
+  for (const paint of [...painters]) paint();
+}
 
 /** Se volvió de Notion con un código y se está canjeando. */
 export function notionExchangeStarted(): void {
   pending = true;
   notice = null;
-  repaint?.();
+  repaintAll();
 }
 
 /** El canje no salió: se explica aquí, no en la consola. */
 export function notionExchangeFailed(message: string): void {
   pending = false;
   notice = message;
-  repaint?.();
+  repaintAll();
+}
+
+/**
+ * Elegir otra página raíz. Lo pide la bandeja de la franja, y afecta a todas las
+ * pestañas a la vez: los caminos que tenían abiertos cuelgan de la raíz vieja y
+ * dejan de significar nada en cuanto cambia.
+ */
+export function chooseRoot(on = true): void {
+  picking = on;
+  repaintAll();
+}
+
+/**
+ * Empieza el viaje de OAuth. Devuelve el porqué si no se pudo ni empezar, o
+ * `null` si la página ya se está yendo a Notion.
+ *
+ * Vive aquí y no en el botón porque hay dos sitios desde donde se conecta —esta
+ * pantalla y la bandeja— y el paso previo (pedir al servidor el `client_id` y
+ * fabricar el `state`) tiene que ser exactamente el mismo en los dos.
+ */
+export async function beginNotion(): Promise<string | null> {
+  try {
+    const config = await fetchOAuthConfig();
+    location.assign(beginAuthorization(config));
+    return null;
+  } catch (cause) {
+    return cause instanceof OAuthError ? cause.message : "No se pudo empezar la conexión.";
+  }
 }
 
 export interface WorkspaceSlots {
-  /** La fila fija de arriba de la franja: ahí pone las migas el navegador de carpetas. */
+  /** La fila fija de arriba de la pestaña: ahí van las migas. */
   head: HTMLElement;
   /** El cuerpo que se desplaza. */
   pane: HTMLElement;
+  /** Dónde abrir esta pestaña, si se abrió desde otra. */
+  seedPath?: readonly Crumb[];
+  /** Cómo se llama esta pestaña ahora mismo. */
+  setLabel?: (text: string) => void;
+  /** Abrir otra pestaña en ese camino. */
+  openTab?: (path: readonly Crumb[]) => void;
+}
+
+export interface Workspace {
+  dispose(): void;
 }
 
 type Mode = "unknown" | "off" | "busy" | "pick" | "on";
 
-export function mountWorkspace(slots: WorkspaceSlots): void {
+export function mountWorkspace(slots: WorkspaceSlots): Workspace {
   let mode: Mode = "unknown";
   let rootId = "";
   let folders: Folders | null = null;
   /** Lo que se actualiza sin reconstruir: el nombre del espacio y la raíz. */
   let refresh: ((current: NotionSession) => void) | null = null;
-  /** Se pidió cambiar la raíz estando ya conectado. */
-  let picking = false;
-  /** El token que ya se comprobó contra Notion; no se pregunta dos veces. */
-  let verified = "";
+  /**
+   * La última carpeta en la que estuvo esta pestaña. Al reconstruirse —volver
+   * del elegir-raíz, por ejemplo— se retoma ahí en vez de saltar a la raíz. Se
+   * descarta si la raíz cambió, porque entonces los ids no valen.
+   */
+  let lastPath: readonly Crumb[] | null = slots.seedPath ?? null;
+
+  function label(text: string): void {
+    slots.setLabel?.(text);
+  }
 
   /**
    * Cerrar la sesión repinta la pantalla entera, así que el mensaje no puede
@@ -116,12 +176,17 @@ export function mountWorkspace(slots: WorkspaceSlots): void {
       ? (pending ? "busy" : "off")
       : (picking || !current.rootPageId) ? "pick" : "on";
 
+    // El aviso es de la conexión, no de una pantalla: se queda hasta que haya
+    // conexión, y así lo ven todas las pestañas y no sólo la que repintó primero.
+    if (next !== "off") notice = null;
+
     // Cambiar la página raíz cambia el contenido entero: eso sí se reconstruye.
     if (next !== mode || (next === "on" && current?.rootPageId !== rootId)) {
       mode = next;
       refresh = null;
       folders?.dispose();
       folders = null;
+      if (current?.rootPageId !== rootId) lastPath = null;
       rootId = current?.rootPageId ?? "";
       // Las migas son de las carpetas: fuera de ahí, la fila de arriba no existe.
       if (next !== "on") render(slots.head);
@@ -138,6 +203,7 @@ export function mountWorkspace(slots: WorkspaceSlots): void {
   /* --- volviendo de Notion ------------------------------------------------ */
 
   function buildPending(): void {
+    label("Conectando…");
     render(slots.pane,
       el("div", { class: "pnl" }, [
         el("p", { class: "pnl__lead", text: "Completando la conexión…" }),
@@ -151,8 +217,9 @@ export function mountWorkspace(slots: WorkspaceSlots): void {
   /* --- sin conectar ------------------------------------------------------- */
 
   function buildDisconnected(): void {
+    label("Espacio de trabajo");
+
     const message = el("p", { class: notice ? "msg msg--bad" : "msg", text: notice ?? "" });
-    notice = null;
     const button = el("button", {
       class: "btn",
       text: "Conectar con Notion",
@@ -164,17 +231,12 @@ export function mountWorkspace(slots: WorkspaceSlots): void {
       button.disabled = true;
       message.className = "msg";
       message.textContent = "Abriendo la autorización de Notion…";
-      try {
-        const config = await fetchOAuthConfig();
-        // A partir de aquí la página se va: no hace falta rehabilitar el botón.
-        location.assign(beginAuthorization(config));
-      } catch (cause) {
-        button.disabled = false;
-        message.className = "msg msg--bad";
-        message.textContent = cause instanceof OAuthError
-          ? cause.message
-          : "No se pudo empezar la conexión.";
-      }
+      const failed = await beginNotion();
+      // Si salió bien la página ya se está yendo: no hace falta rehabilitar nada.
+      if (!failed) return;
+      button.disabled = false;
+      message.className = "msg msg--bad";
+      message.textContent = failed;
     }
 
     render(slots.pane,
@@ -217,6 +279,7 @@ export function mountWorkspace(slots: WorkspaceSlots): void {
   function buildPicker(current: NotionSession): void {
     pending = false;
     verify(current.token);
+    label("Elegir raíz");
 
     const name = el("span", {
       class: "ws__name",
@@ -271,10 +334,11 @@ export function mountWorkspace(slots: WorkspaceSlots): void {
             attrs: { type: "button", "aria-current": isRoot, "data-page-id": page.id },
             on: {
               click: () => {
-                // Elegir cierra el asunto: se vuelve a las carpetas, que es lo
-                // que se venía a hacer.
+                // Elegir cierra el asunto en todas las pestañas: es lo que se
+                // venía a hacer, y las demás estaban esperando lo mismo.
                 picking = false;
                 setRootPage(page.id, title);
+                repaintAll();
               },
             },
           }, [
@@ -329,7 +393,7 @@ export function mountWorkspace(slots: WorkspaceSlots): void {
           class: "lnkbtn",
           text: "Volver a los proyectos",
           attrs: { type: "button" },
-          on: { click: () => { picking = false; apply(); } },
+          on: { click: () => { chooseRoot(false); } },
         }),
       ]));
     }
@@ -345,35 +409,7 @@ export function mountWorkspace(slots: WorkspaceSlots): void {
     pending = false;
     verify(current.token);
 
-    /**
-     * De dónde es esto y cómo cambiarlo, en una línea al final de la lista. Era
-     * una pestaña entera; como pestaña obligaba a salir de los proyectos para
-     * leer un dato que no cambia nunca, y aquí está sin estorbar.
-     */
-    const where = el("span", { class: "wfoot__where" });
-    const foot = el("p", { class: "pnl__note wfoot" }, [
-      where,
-      " · ",
-      el("button", {
-        class: "lnkbtn",
-        text: "Cambiar raíz",
-        attrs: { type: "button", title: "Elegir otra página de Notion como raíz" },
-        on: { click: () => { picking = true; apply(); } },
-      }),
-      " · ",
-      el("button", {
-        class: "lnkbtn",
-        text: "Desconectar",
-        attrs: { type: "button", title: "Cerrar la sesión de Notion en este navegador" },
-        on: { click: () => { closeSession(); } },
-      }),
-    ]);
-
     refresh = (updated) => {
-      const space = updated.workspaceName ?? "tu Notion";
-      where.textContent = updated.rootPageTitle
-        ? `En ${space}, bajo «${updated.rootPageTitle}».`
-        : `En ${space}.`;
       folders?.retitle(updated.rootPageTitle ?? "Proyectos");
     };
 
@@ -383,14 +419,33 @@ export function mountWorkspace(slots: WorkspaceSlots): void {
       token: current.token,
       root: current.rootPageId as string,
       rootTitle: current.rootPageTitle ?? "Proyectos",
-      foot,
+      ...(lastPath ? { initialPath: lastPath } : {}),
+      onPath: (path) => {
+        lastPath = path;
+        // La pestaña se llama como la carpeta que muestra. Es lo que se busca al
+        // mirar la fila de pestañas: dónde está cada una.
+        const last = path[path.length - 1];
+        label(last?.name || "Proyectos");
+      },
+      ...(slots.openTab ? { onNewTab: slots.openTab } : {}),
       revoked: revoke,
     });
 
     refresh(current);
   }
 
-  repaint = apply;
+  /* --- puesta en marcha --------------------------------------------------- */
+
+  painters.add(apply);
+  const stop = session.subscribe(apply);
   apply();
-  session.subscribe(apply);
+
+  return {
+    dispose() {
+      painters.delete(apply);
+      stop();
+      folders?.dispose();
+      folders = null;
+    },
+  };
 }

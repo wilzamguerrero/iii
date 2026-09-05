@@ -161,25 +161,33 @@ tirador— con el espacio de trabajo:
 │        ┌────────────────────────────────┐  🎤  ✈     │
 │        └────────────────────────────────┘            │
 │                                                      │
-├──────────────────────────────────────────────────────┤
-│  ▲   Espacio de trabajo                              │  ← tirador
-├──────────────────────────────────────────────────────┤
-│  PROYECTOS / TESIS       NUEVA PÁGINA · NUEVA CARPETA│  ← dónde estás
-│  › Indagar                                           │
-│  · Intención declarada                     renombrar │
-│  En Notion de Wilzam, bajo «3i». Cambiar raíz · Desc.│
+│    ┌────────────────────────────────────────────┐    │  ← no llega a los lados
+│    │ ▲ │ TESIS ×│ FUENTES ×│ +      ◌  ✈  ⚙     │    │  ← la tira: pestañas y bandeja
+│    ├────────────────────────────────────────────┤    │
+│    │ PROYECTOS / TESIS   NUEVA PÁGINA · CARPETA │    │  ← dónde estás
+│    │   ┌────┐  ┌────┐  ┌────┐                   │    │  ← las baldosas
+│    │   │    │  │    │  │    │        ⋯          │    │
+│    │   └────┘  └────┘  └────┘                   │    │
+│    │   Indagar  Idear   Intención               │    │
+│    └────────────────────────────────────────────┘    │
 └──────────────────────────────────────────────────────┘
 ```
 
-Empezó con tres pestañas —Proyectos · Notion · IA— y se quedó en una sola pantalla
-(2026-09-05; §12 D6). **Conectar Notion es el primer paso de esta pantalla**, no un lugar
-aparte: sin conexión no hay proyectos que enseñar, y con conexión aquella pestaña no tenía
-nada más que decir que el nombre del espacio y la página raíz, que ahora son una línea al
-final de la lista. **Los ajustes de IA viven en la ventana del asistente**, que es donde se
-nota lo que configuran. Y **el árbol se recorre en horizontal**: la fila de arriba dice
-dónde estás —con la misma gramática que tenían las pestañas: mayúsculas pequeñas y una
-línea bajo el sitio actual— y debajo va sólo el contenido de esa carpeta. Se entra en una
-carpeta pulsándola y se vuelve pulsando una miga.
+Empezó con tres pestañas de sección —Proyectos · Notion · IA— y se quedó en una sola
+pantalla (2026-09-05; §12 D6). **Conectar Notion es el primer paso de esa pantalla**, no un
+lugar aparte: sin conexión no hay proyectos que enseñar, y con conexión aquella pestaña no
+tenía nada más que decir que el nombre del espacio y la página raíz. Y **el árbol se
+recorre en horizontal**: la fila de arriba dice dónde estás —con la misma gramática que
+tenían las pestañas: mayúsculas pequeñas y una línea bajo el sitio actual— y debajo va
+sólo el contenido de esa carpeta, en baldosas. Se entra en una carpeta pulsándola y se
+vuelve pulsando una miga.
+
+La franja **no llega a los lados** y trae el borde, las esquinas y la sombra de la ventana
+del asistente: se lee como una pestaña que sube desde abajo. Su tira lleva **pestañas de
+navegación** —un recorrido por pestaña, y «Abrir en otra pestaña» en el menú de una
+baldosa— y, en el extremo, tres botones que sirven **con la franja plegada**: la cuenta de
+Notion (qué espacio, la raíz, desconectar), los **ajustes de IA** —los mismos de la
+ventana del asistente, no una copia— y los del sistema, que hoy son el tema claro/oscuro.
 
 El asistente no espera al espacio de trabajo: en cuanto la intro termina aparece su
 tirador, con la forma del papel de enviar la intención, y se puede arrastrar a donde se
@@ -344,7 +352,8 @@ resuelve `three` al archivo vendorizado y mantener dos mecanismos era engañoso.
   no cambió, pero eso no lo demuestra una terminal.
 
 ### Fase 1 · Franja inferior + conexión Notion
-Franja retráctil —con tres pestañas entonces; hoy una sola pantalla, §12 D6—. Flujo
+Franja retráctil —tres pestañas de sección entonces; hoy un panel separado de los lados con
+pestañas de navegación, §12 D6—. Flujo
 OAuth completo: `getOAuthUrl` con `state`
 CSRF, `api/notion-oauth.ts`, validación del `state`, limpieza de `code`/`state` de la URL
 con `history.replaceState`, `api/notion.ts` como proxy. Selector de página raíz vía
@@ -371,8 +380,8 @@ que va a usar (`GET /api/notion-oauth`) y el navegador no puede inducir otro.
 
 ### Fase 2 · Árbol de proyectos y páginas — **escrita**
 Puerto de `extractFileTree` y del CRUD: crear proyecto (toggle), crear página (code con
-`caption`), renombrar, borrar. Renderizado propio del árbol, blanco y plano. Estado de
-sesión: última página abierta.
+`caption`), renombrar, borrar. Renderizado propio, blanco y plano —hoy en baldosas, §12 D6—.
+Estado de sesión: última página abierta.
 
 Dos cosas se decidieron al escribirla. **Los hijos se piden al entrar** en la carpeta, no
 de golpe: con veinte proyectos serían veinte peticiones para pintar una lista que igual
@@ -524,11 +533,14 @@ Lo que ya existe va sin marca; lo que todavía es destino de una fase lleva **(F
 ├── api/
 │   ├── _types.ts               · firma compartida; los `_` no son endpoints
 │   ├── _ai.ts                  · tabla de proveedores, claves, relevo del stream
+│   ├── _anthropic.ts           · traduce OpenAI ↔ Anthropic, sólo en el servidor
+│   ├── _registry.ts            · models.dev: metadatos y respaldo, caché de 6 h
 │   ├── health.ts               · comprobación de vida
 │   ├── notion-oauth.ts         · intercambio del código por token
 │   ├── notion.ts               · proxy con lista blanca de rutas
 │   ├── ai-chat.ts              · conversación en flujo (SSE)
 │   ├── ai-models.ts            · catálogo de modelos del proveedor
+│   ├── ai-registry.ts          · el directorio de proveedores compatibles
 │   └── github-device.ts        · alta por dispositivo; `client_id` fijo aquí
 ├── src/
 │   ├── app.ts                  · entrada; atiende `intent:submit` y el retorno de OAuth
@@ -539,6 +551,7 @@ Lo que ya existe va sin marca; lo que todavía es destino de una fase lleva **(F
 │   │   ├── ai/                 · types · config · wire · models · device · chat
 │   │   │                         prompt (el sistema 3i) · conversation (el hilo)
 │   │   ├── state/              · intent · selection — lo que el asistente ve
+│   │   │                         theme — claro · oscuro · automático
 │   │   ├── persist/            · session (Notion) · draftCache IndexedDB (Fase 3)
 │   │   ├── editor/             · TipTap, markdown, comandos «/» (Fase 3)
 │   │   └── voice/              · dictado (Fase 4)
@@ -553,17 +566,19 @@ Lo que ya existe va sin marca; lo que todavía es destino de una fase lleva **(F
 │   ├── ui/
 │   │   ├── dom.ts              · el(), render(), debounce — sin innerHTML
 │   │   ├── origami.ts          · la figura de papel, una sola fuente
+│   │   ├── icons.ts            · los trazos: carpeta, página, silueta, mandos
 │   │   ├── afterIntro.ts       · la señal de «la intro ya terminó»
 │   │   ├── drag.ts             · ponlo donde quieras, y que ahí se quede
-│   │   ├── dock/               · la franja: dock · workspace · folders
+│   │   ├── dock/               · la franja: dock · tabs · tray · workspace
+│   │   │                         folders · menu
 │   │   ├── assistant/          · el tirador de papel y su ventana de chat
 │   │   ├── editor/             · contenedor del editor (Fase 3)
 │   │   └── fase/               · panel de estado 3i (Fase 6)
 │   └── styles/
 │       ├── app.css             · único punto de entrada de la cascada
-│       ├── tokens.css          · los tokens originales, sin un valor cambiado
+│       ├── tokens.css          · los originales sin tocar, más el tema oscuro
 │       ├── intro.css           · el resto del CSS de la intro, intacto
-│       ├── dock.css            · la franja, las carpetas y los primitivos del panel
+│       ├── dock.css            · la franja, las pestañas, las baldosas, el panel
 │       └── assistant.css       · el tirador y la ventana flotante
 ├── docs/                       · Documento Maestro 3i, estructura CESMAG
 ├── reference/                  · sólo consulta; ni se compila ni se vigila
@@ -585,6 +600,7 @@ que era la costura que `main.js` emitía sin que nadie escuchara.
 | Voz | No hay | Todavía no (Fase 4) | Dictado en la intención y en el editor |
 | IA | No hay | Asistente flotante que lee la página abierta y pregunta | Además cuestiona por sección |
 | Metodología | Sólo en el PDF | En el sistema del asistente: pregunta, no concluye | Operativa: naturaleza → herramientas → documentos |
+| Interfaz | Página en blanco | Franja-panel con pestañas, baldosas y tema claro/oscuro | Igual, con editor y panel de fase |
 | Build | Sin build | Vite + funciones serverless | Igual |
 
 ---
@@ -738,24 +754,60 @@ Ninguno queda bloqueado por las decisiones de este plan.
    para inventarle otra forma. Lo que esto habilita, y el árbol no: carpetas dentro de
    carpetas, sin que la pantalla se estreche a cada nivel.
 
+   **Ampliación (2026-09-05): la franja es un panel, con pestañas de navegación.** Lo que se
+   quitó arriba eran pestañas de **sección** —tres nombres para tres pantallas—, y eso sigue
+   quitado. Las que entran ahora son de **sitio**: cada una es un recorrido por las carpetas,
+   y «Abrir en otra pestaña» está en el menú de una baldosa. No parten una pantalla en tres;
+   abren varias veces la misma, que es lo que pedía tener la tesis en una y las fuentes en
+   otra. Cada pestaña guarda su espacio de trabajo montado y vivo —cambiar de pestaña no
+   vuelve a pedirle nada a Notion—, y lo que es de la conexión y no del recorrido —sesión,
+   raíz, avisos— vive una sola vez y se repinta en todas.
+
+   La franja pasó a leerse como **panel**: separada de los lados de la pantalla, con el borde,
+   las esquinas y la sombra de la ventana del asistente —`--r-panel` y `--shadow`, ya
+   declarados— y pegada al filo de abajo, que es de donde sube. El árbol pasó a **baldosas**:
+   icono y nombre en una rejilla, en vez de filas. El panel recorta lo que se sale de él —es
+   lo que le da las esquinas—, así que los menús de las baldosas y las ventanitas de la
+   bandeja cuelgan del `<body>`.
+
+   En el extremo de la tira, **tres botones**: la cuenta de Notion, los ajustes de IA y los
+   del sistema. Los tres se abren con la franja plegada, y por eso están ahí: la tira es lo
+   único que queda a la vista al plegarse, así que se llega a los ajustes sin abrirla. Esto no
+   deshace la mitad de D6 que mandó los ajustes de IA a la ventana del asistente: no es una
+   segunda copia sino la misma —`mountAiSettings` se suscribe a la configuración, y lo que se
+   cambia en un sitio ya está cambiado en el otro—, y no viven *dentro* de la franja sino
+   colgados de su borde.
+
+   Y el **tema claro/oscuro/automático**, en los ajustes del sistema. Es una segunda tabla de
+   variables en `tokens.css` y nada más: la intro no cambia de color, porque el lienzo es
+   transparente y la coreografía está calibrada contra ese blanco. Se aplica en un `<script>`
+   clásico de `index.html` —un módulo diferido pintaría el blanco primero y se vería el
+   salto— y `core/state/theme.ts` gobierna de ahí en adelante.
+
 ---
 
 ## 13. Estado y siguiente paso
 
 **Fases 0, 1, 2 y 5 escritas** (2026-09-05). La intro sigue byte a byte como estaba. La
-franja se reordenó ese mismo día al usarla: una sola pantalla en vez de tres pestañas, los
-ajustes de IA dentro de la ventana del asistente y las carpetas recorridas en horizontal
-(§12 D6).
+franja se reordenó dos veces ese mismo día, las dos al usarla (§12 D6): primero una sola
+pantalla en vez de tres pestañas de sección, los ajustes de IA dentro de la ventana del
+asistente y las carpetas recorridas en horizontal; después la franja pasó a ser un panel
+separado de los lados, con pestañas de navegación, las carpetas en baldosas, tres botones
+en el extremo de la tira —Notion, IA y sistema— y tema claro/oscuro.
 
 Lo que hay en pie:
 
 - **La franja**, que se revela cuando la intro termina —una sola regla para todo lo que
-  aparece después (`ui/afterIntro.ts`), no un observador por pieza—. Dentro, una sola
-  pantalla: el espacio de trabajo.
+  aparece después (`ui/afterIntro.ts`), no un observador por pieza—. Es un panel: separado
+  de los lados, con el borde, las esquinas y la sombra de la ventana del asistente, pegado
+  al filo de abajo. Dentro, **pestañas de navegación**: cada una es un recorrido propio por
+  las carpetas, con su espacio de trabajo montado y vivo, y «Abrir en otra pestaña» en el
+  menú de cada baldosa. En el extremo de la tira, tres botones que funcionan **con la franja
+  plegada**: la cuenta de Notion, los ajustes de IA y los del sistema.
 - **Notion**: intercambio OAuth del lado del servidor, `state` CSRF, limpieza de la URL,
   proxy con lista blanca y elección de página raíz. Conectar es el estado inicial de esa
-  pantalla, y cuando ya está conectada queda como una línea al final de la lista: de qué
-  espacio es, cambiar raíz, desconectar.
+  pantalla, y cuando ya está conectada queda en el botón de Notion del extremo de la tira:
+  de qué espacio es, cambiar raíz, desconectar.
 - **Proyectos**: las carpetas bajo esa raíz, recorridas en horizontal —migas arriba,
   contenido debajo, se entra y se vuelve—. Crear carpeta y página, renombrar, borrar con
   confirmación en el propio botón, abrir un documento —que es lo que el asistente pasa a
@@ -768,9 +820,12 @@ Lo que hay en pie:
   el modelo escrito a mano si esa API no lo publica. Un proveedor propio puede hablar el
   formato de OpenAI o el de Anthropic; la traducción es del servidor. «Probar conexión» manda una pregunta
   mínima de verdad antes de que haga falta. No hay ninguna lista de modelos escrita.
-  Todo eso se configura **dentro de la ventana del asistente**, en «Ajustes».
+  Todo eso se configura en «Ajustes», que está en dos sitios que son el mismo: la ventana
+  del asistente y el botón de papel del extremo de la franja.
 - **El asistente**: tirador de papel y ventana, los dos arrastrables y persistentes; el
   hilo de la conversación fuera de la interfaz; el sistema 3i escrito para preguntar.
+- **El tema** claro, oscuro o automático, en los ajustes del sistema: una segunda tabla de
+  variables en `tokens.css`, aplicada antes del primer pintado. La intro no cambia de color.
 
 **Lo que no se puede verificar desde una terminal**, y por tanto queda a ojo en el
 navegador de quien lo usa:
@@ -781,9 +836,9 @@ navegador de quien lo usa:
    recargar— sólo la puede hacer quien conectó. Sin página raíz elegida la pantalla no
    ofrece otra cosa: sin raíz no hay dónde colgar nada.
 2. **Una respuesta viva del asistente.** No hay ninguna clave en el entorno de este
-   servidor a propósito. En «Ajustes», dentro de la ventana del asistente: pegar una clave
-   de OpenRouter, o conectar la
-   cuenta de GitHub con el código que aparece. Después, abrir una página y preguntarle qué
+   servidor a propósito. En «Ajustes» —la ventana del asistente o el botón de papel de la
+   franja—: pegar una clave de OpenRouter, o conectar la cuenta de GitHub con el código que
+   aparece. Después, abrir una página y preguntarle qué
    le falta: si responde citando lo que hay escrito, el contexto funciona.
 3. **Un proveedor añadido a mano contra su API real.** El servidor se probó con un eco
    local y contra una pasarela de verdad: las cabeceras llegan como se escribieron, las
@@ -793,7 +848,13 @@ navegador de quien lo usa:
    vuelta completa en el navegador: añadir la API, desplegar «Autenticación y cabeceras»,
    elegir `api-key` o `x-api-key` si toca, guardar, ver el catálogo o escribir el modelo, y
    «Probar conexión» hasta que conteste.
-4. **Los cinco actos de la intro**, que el código no demuestra por no haber cambiado.
+4. **La franja rediseñada.** `tsc --noEmit` y `npm run build` pasan, y eso no dice nada de
+   cómo se ve. Queda por mirar en el navegador: las esquinas redondeadas y los huecos de los
+   lados con la franja plegada; abrir, cerrar y cambiar de pestaña, y «Abrir en otra pestaña»
+   desde una baldosa; los tres botones del extremo con la franja plegada, y que al plegar o
+   desplegar se cierren en vez de perseguir al botón; y el tema oscuro, con la intro incluida:
+   tiene que seguir siendo blanca.
+5. **Los cinco actos de la intro**, que el código no demuestra por no haber cambiado.
 
 **Siguiente: Fase 3 — editor tipo Notion.** Es la que falta para que la plataforma escriba
 y no sólo lea: hoy una página se abre para que el asistente la vea, pero el texto se sigue

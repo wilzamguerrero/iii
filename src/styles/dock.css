@@ -1,29 +1,51 @@
 /* ==========================================================================
-   Franja inferior: Proyectos · Notion · IA  (plan.md §5, Fase 1)
+   La franja de abajo: el espacio de trabajo  (plan.md §5, Fases 1-2)
 
-   Retráctil porque la pantalla de inicio es una pregunta y nada más. Cerrada
-   deja un filo y una etiqueta; abierta ocupa el tercio de abajo y empuja el
-   formulario hacia arriba en vez de taparlo.
+   Una pestaña que sube desde abajo. No llega a los bordes de la página: se
+   separa a los lados, y esa separación es lo que la vuelve una hoja por delante
+   de la página en vez de un borde de la ventana. Es el mismo objeto que la
+   ventana del asistente —1 px de borde, `--r-panel`, `--shadow`—; se declara en
+   los tokens y aquí sólo se usa.
+
+   Plegada deja a la vista su filo, y el filo es la barra de pestañas: dónde
+   estás, y a la derecha la bandeja. Los ajustes se alcanzan sin abrirla.
 
    z-index 7: por encima del grano (5) y del botón de saltar (6). El lienzo (2)
    sigue debajo, así que el avión de fondo continúa derivando detrás del panel.
+   Lo que cuelga del <body> —los menús de una baldosa, las ventanitas de la
+   bandeja— va por encima de todo (10 y 12): tiene que salirse de la franja, que
+   recorta, y del panel del asistente (9).
    ========================================================================== */
 
 /* En :root y no en .dock: la capa del menú también necesita leer la altura
    para recentrarse, y no es descendiente de la franja. */
-:root { --dock-h: min(340px, 46vh); }
+:root {
+  --dock-h: min(340px, 46vh);
+  /* La separación a los lados. Es lo único que la hace leerse como pestaña. */
+  --dock-inset: clamp(0.6rem, 3.5vw, 3rem);
+  /* Dentro no hace falta el margen de una franja a sangre: el panel ya está
+     separado de los bordes de la página. */
+  --dock-pad: clamp(0.9rem, 2.4vw, 1.6rem);
+}
 
 .dock {
   position: fixed;
-  left: 0;
-  right: 0;
+  left: var(--dock-inset);
+  right: var(--dock-inset);
   bottom: 0;
   z-index: 7;
   display: flex;
   flex-direction: column;
   background: var(--paper);
-  border-top: 1px solid var(--ink-line);
-  /* Cerrada se desplaza justo lo que mide el cuerpo: el asa queda a ras del
+  border: 1px solid var(--ink-line);
+  /* Abajo no hay borde: ese canto está siempre pegado al filo de la ventana. */
+  border-bottom: 0;
+  border-radius: var(--r-panel) var(--r-panel) 0 0;
+  box-shadow: var(--shadow);
+  /* Las esquinas redondeadas sólo se ven si se recorta lo de dentro. Es también
+     la razón por la que los menús y las ventanitas cuelgan del <body>. */
+  overflow: hidden;
+  /* Cerrada se desplaza justo lo que mide el cuerpo: el filo queda a ras del
      borde inferior y el resto sale de cuadro. */
   transform: translateY(var(--dock-h));
   transition: transform 0.62s var(--out-expo);
@@ -40,30 +62,33 @@
   to   { opacity: 1; transform: translateY(var(--dock-h)); }
 }
 
-/* --- asa ---------------------------------------------------------------- */
+/* --- el filo: pestañas y bandeja ---------------------------------------- */
 
-.dock__handle {
+.dock__strip {
+  flex: 0 0 auto;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  width: 100%;
-  padding: 0.62rem clamp(1rem, 4vw, 2.25rem);
+  align-items: stretch;
+  min-width: 0;
+  padding-inline: 0.4rem;
+}
+
+/* El chevrón es el interruptor de siempre; la etiqueta se la quedaron las
+   pestañas, que ya dicen dónde estás. */
+.dock__toggle {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 2rem;
   border: 0;
   background: transparent;
   color: var(--ink-soft);
-  font-family: inherit;
-  font-size: 0.66rem;
-  font-weight: 400;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
   cursor: pointer;
   transition: color 0.3s ease;
 }
 
-.dock__handle:hover,
-.dock__handle:focus-visible { color: var(--ink); }
-.dock__handle:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: -3px; }
+.dock__toggle:hover,
+.dock__toggle:focus-visible { color: var(--ink); }
+.dock__toggle:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: -3px; }
 
 .dock__chev {
   width: 9px;
@@ -76,6 +101,235 @@
 
 .dock[data-open="true"] .dock__chev { transform: rotate(45deg) translate(-1px, -1px); }
 
+.tabs {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+}
+
+/* Muchas pestañas se desplazan en horizontal, sin barra a la vista, en vez de
+   empujar la bandeja fuera del filo. */
+.tabs__list {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tabs__list::-webkit-scrollbar { display: none; }
+
+/* Estirada de arriba abajo del filo: es lo que deja la línea de la activa
+   apoyada en el canto de abajo, sobre la que separa el filo del cuerpo. Y sin
+   encogerse: con muchas pestañas la fila se desplaza en vez de estrujarlas. */
+.tab { position: relative; display: flex; align-items: stretch; flex: 0 0 auto; min-width: 0; }
+
+/* La misma gramática que el camino de las carpetas: mayúsculas pequeñas y una
+   línea bajo la que estás. Decir qué se mira es el mismo gesto. */
+.tab__pick {
+  position: relative;
+  max-width: 13rem;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  padding: 0.78rem 0.2rem 0.78rem 0.6rem;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.3s ease;
+}
+
+.tab__name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* A ras del canto, no un píxel por debajo: la fila se desplaza en horizontal y
+   un scroller recorta lo que se sale por cualquier lado. */
+.tab__pick::after {
+  content: "";
+  position: absolute;
+  left: 0.6rem;
+  right: 0.2rem;
+  bottom: 0;
+  height: 1px;
+  background: var(--ink);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.45s var(--out-expo);
+}
+
+.tab__pick:hover { color: var(--ink); }
+.tab__pick:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: -2px; }
+.tab__pick[aria-selected="true"] { color: var(--ink); }
+.tab__pick[aria-selected="true"]::after { transform: scaleX(1); }
+
+/* La cruz aparece en la activa y donde esté el puntero: en las demás sería una
+   fila de cruces pidiendo que se cierre algo. */
+.tab__x {
+  flex: 0 0 auto;
+  align-self: center;
+  display: grid;
+  place-items: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  margin-right: 0.3rem;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s ease, color 0.2s ease, background-color 0.2s ease;
+}
+
+.tab.is-on .tab__x,
+.tab:hover .tab__x,
+.tab:focus-within .tab__x { opacity: 1; }
+.tab__x:hover { color: var(--ink); background: var(--tint); }
+.tab__x:focus-visible { opacity: 1; outline: 1px solid var(--ink-faint); outline-offset: 1px; }
+
+.tabs__new {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 1.9rem;
+  border: 0;
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+  transition: color 0.25s ease;
+}
+
+.tabs__new:hover { color: var(--ink); }
+.tabs__new:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: -3px; }
+
+/* --- la bandeja ---------------------------------------------------------- */
+
+.tray {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+  padding-left: 0.3rem;
+}
+
+.tray__btn {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: color 0.25s ease, background-color 0.25s ease;
+}
+
+.tray__btn:hover,
+.tray__btn[aria-expanded="true"] { color: var(--ink); background: var(--wash); }
+.tray__btn:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: -2px; }
+
+/* Sin conectar, la silueta va en voz más baja: todavía no hay nadie detrás. */
+.tray__btn.is-off { color: var(--ink-faint); }
+
+.tray__face { display: grid; place-items: center; width: 20px; height: 20px; }
+.tray__pic { width: 18px; height: 18px; border-radius: 3px; object-fit: cover; background: var(--tint); }
+.tray__emoji { font-size: 15px; line-height: 1; }
+.tray__ori { width: 19px; height: 19px; overflow: visible; }
+
+/* Las ventanitas de la bandeja. Cuelgan del <body> y se colocan por JS
+   (`ui/dock/tray.ts`), ancladas por abajo y por la derecha: crecen hacia arriba
+   por encima de la franja, que las recortaría, y siguen a la vista con la franja
+   plegada. */
+.tray-pop {
+  position: fixed;
+  z-index: 10;
+  width: min(20rem, calc(100vw - 1.5rem));
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  border: 1px solid var(--ink-line);
+  border-radius: var(--r-panel);
+  box-shadow: var(--shadow);
+  animation: tray-in 0.24s var(--out-quart) both;
+}
+
+.tray-pop--wide { width: min(27rem, calc(100vw - 1.5rem)); }
+
+@keyframes tray-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.tray-pop__head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 0.6rem 0.6rem 0.95rem;
+  border-bottom: 1px solid var(--ink-line);
+}
+
+.tray-pop__title {
+  font-size: 0.66rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.tray-pop__x {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: color 0.2s ease, background-color 0.2s ease;
+}
+
+.tray-pop__x:hover { color: var(--ink); background: var(--wash); }
+.tray-pop__x:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: 1px; }
+
+/* Los ajustes de IA son largos: la ventanita no crece sin fin, se desplaza. */
+.tray-pop__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: min(72vh, 34rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 0.95rem;
+}
+
+.tray-pop__body > .pnl { gap: 0.85rem; }
+
+/* Una nota que empieza otro asunto dentro de la misma ventanita. */
+.pnl__note--sep {
+  margin-top: 0.15rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--ink-line);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tray-pop { animation: none; }
+  .tab__pick::after,
+  .tab__x,
+  .tabs__new,
+  .tray__btn,
+  .dock__toggle { transition: none; }
+}
+
 /* --- cuerpo ------------------------------------------------------------- */
 
 .dock__body {
@@ -85,12 +339,24 @@
   border-top: 1px solid var(--ink-line);
 }
 
+/* Una pantalla por pestaña, todas montadas y sólo una a la vista. Se esconden
+   con `hidden` y no se tiran: volver a una pestaña no debe costar otra petición
+   a Notion, que admite unas tres por segundo. El `[hidden]` de los tokens lleva
+   `!important` justamente para ganarle a estos `display: flex`. */
+.dock__views,
+.dock__view {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 /* La fila del camino. Se queda fija arriba y sólo el cuerpo se desplaza: al
    bajar por una carpeta larga, la vuelta tiene que seguir a la vista. Vacía no
    ocupa, así que fuera de las carpetas la franja es sólo cuerpo. */
 .dock__head {
   flex: 0 0 auto;
-  padding: 0 clamp(1rem, 4vw, 2.25rem);
+  padding: 0 var(--dock-pad);
   border-bottom: 1px solid var(--ink-line);
 }
 
@@ -191,7 +457,7 @@
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: clamp(1rem, 2.6vh, 1.6rem) clamp(1rem, 4vw, 2.25rem) 1.6rem;
+  padding: clamp(0.9rem, 2.4vh, 1.4rem) var(--dock-pad) 1.5rem;
 }
 
 /* El formulario está centrado en la pantalla; abierta la franja, se recentra
@@ -203,7 +469,9 @@ body[data-dock="open"] .menu {
 }
 
 @media (max-width: 620px) {
-  :root { --dock-h: min(330px, 64vh); }
+  :root { --dock-h: min(330px, 64vh); --dock-inset: 0.5rem; }
+  .tab__pick { max-width: 9rem; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(5.75rem, 1fr)); }
   .crumbs { gap: 0.6rem; }
   .crumbs__acts { gap: 0.7rem; }
   .crumb { font-size: 0.68rem; letter-spacing: 0.1em; max-width: 8.5rem; }
@@ -254,7 +522,7 @@ body[data-dock="open"] .menu {
 .pnl__note code {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   font-size: 0.94em;
-  background: rgba(20, 23, 28, 0.045);
+  background: var(--tint);
   padding: 0.1em 0.35em;
   border-radius: 2px;
 }
@@ -312,7 +580,7 @@ body[data-dock="open"] .menu {
   flex: 0 0 auto;
   border-radius: 3px;
   object-fit: cover;
-  background: rgba(20, 23, 28, 0.05);
+  background: var(--tint);
 }
 
 .ws__name {
@@ -346,7 +614,7 @@ body[data-dock="open"] .menu {
   padding: 0.6rem 0.1rem;
 }
 
-.search__input::placeholder { color: rgba(20, 23, 28, 0.3); }
+.search__input::placeholder { color: var(--ghost); }
 .search__input:focus { outline: none; }
 
 /* Las cabeceras propias de un proveedor: `Nombre: valor`, una por línea. Es el
@@ -367,7 +635,7 @@ body[data-dock="open"] .menu {
   padding: 0.5rem 0.6rem;
 }
 
-.tarea::placeholder { color: rgba(20, 23, 28, 0.3); }
+.tarea::placeholder { color: var(--ghost); }
 .tarea:focus { outline: none; border-color: var(--ink-faint); }
 
 .plist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
@@ -390,7 +658,7 @@ body[data-dock="open"] .menu {
   transition: background-color 0.25s ease;
 }
 
-.plist__btn:hover { background: rgba(20, 23, 28, 0.028); }
+.plist__btn:hover { background: var(--wash); }
 .plist__btn:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: -1px; }
 
 .plist__btn[aria-current="true"] { font-weight: 400; }
@@ -417,137 +685,198 @@ body[data-dock="open"] .menu {
 
 /* El color no es el único indicio: el texto de un fallo empieza diciendo que
    algo falló. Con esto se lee igual sin distinguir colores. */
-.msg--bad { color: #a3341f; }
+.msg--bad { color: var(--bad); }
 
 /* --- carpetas y documentos (Fase 2) ------------------------------------- */
 
-/* Una carpeta es una fila en la que se entra; un documento, una fila que se
-   abre. Nada de iconos: una punta hacia la derecha para lo que contiene y un
-   punto para lo que se lee. Las acciones sólo aparecen cuando el puntero o el
-   foco están en la fila, para que la lista se lea como una lista y no como un
-   panel. */
+/* Una retícula de baldosas, no una lista de filas. La lista se leía como un
+   índice —una cosa detrás de otra, todas iguales— y esto es un sitio por el que
+   se anda: entrar en una carpeta es un gesto de ir, y una retícula lo dice.
+   Cada baldosa es un icono de trazo y un nombre debajo; la figura la dibuja
+   `ui/icons.ts`, que es el único sitio con trazos de interfaz. */
 
-.fold { list-style: none; margin: 0.35rem 0 0; padding: 0; }
-.fold__item { list-style: none; }
-
-.fold__row {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  min-width: 0;
-  padding: 0.12rem 0.15rem;
-  border-radius: 2px;
+.grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(6.75rem, 1fr));
+  gap: 0.35rem;
 }
 
-.fold__row:hover { background: rgba(20, 23, 28, 0.028); }
+.grid__cell { position: relative; list-style: none; min-width: 0; }
 
-.fold__into,
-.fold__open {
+.tile {
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 0.5rem;
-  flex: 1 1 auto;
-  min-width: 0;
-  padding: 0.3rem 0.1rem;
-  border: 0;
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: var(--r-panel);
   background: transparent;
   color: var(--ink);
   font: inherit;
-  font-size: 0.83rem;
-  text-align: left;
+  font-size: 0.78rem;
+  font-weight: 300;
+  padding: 0.85rem 0.45rem 0.7rem;
   cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 
-.fold__into:focus-visible,
-.fold__open:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: -1px; }
+.tile:hover { background: var(--wash); }
+.tile:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: -1px; }
 
-/* La punta hacia la derecha dice que ahí se entra; al pasar por encima se
-   adelanta un pelo, que es el movimiento que va a ocurrir. */
-.fold__mark {
-  flex: 0 0 auto;
-  width: 5px;
-  height: 5px;
-  border-right: 1px solid var(--ink-soft);
-  border-bottom: 1px solid var(--ink-soft);
-  transform: rotate(-45deg);
-  transition: transform 0.28s var(--out-quart), border-color 0.28s ease;
-}
-
-.fold__into:hover .fold__mark {
-  border-color: var(--ink);
-  transform: rotate(-45deg) translate(1px, 1px);
-}
-
-.fold__dot {
-  flex: 0 0 auto;
-  width: 4px;
-  height: 4px;
-  margin: 0 0.5px;
-  border-radius: 50%;
-  background: var(--ink-faint);
-}
-
-.fold__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* El documento abierto va subrayado y con el punto lleno: el asistente lee ese. */
-.fold__open[aria-current="true"] .fold__name {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-.fold__open[aria-current="true"] .fold__dot { background: var(--ink); }
-
-.fold__acts { display: flex; flex: 0 0 auto; gap: 0.1rem; opacity: 0; transition: opacity 0.2s ease; }
-.fold__row:hover .fold__acts,
-.fold__row:focus-within .fold__acts { opacity: 1; }
-
-.fold__act {
-  border: 0;
-  background: transparent;
+.tile__ico {
+  display: grid;
+  place-items: center;
+  height: 30px;
   color: var(--ink-soft);
-  font: inherit;
-  font-size: 0.6rem;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  padding: 0.2rem 0.28rem;
-  cursor: pointer;
   transition: color 0.2s ease;
 }
 
-.fold__act:hover { color: var(--ink); }
-.fold__act:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: 1px; }
-.fold__act--risk:hover { color: #a3341f; }
-.fold__act--risk.is-armed { color: #a3341f; letter-spacing: 0.04em; }
+.tile:hover .tile__ico { color: var(--ink); }
 
-.fold__wait { padding: 0.3rem 0.2rem; color: var(--ink-soft); font-size: 0.76rem; }
+.tile__name {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.35;
+}
 
-.fold__field {
-  width: 100%;
-  padding: 0.28rem 0.1rem;
+/* El documento abierto: el que está leyendo el asistente. Se marca con el papel
+   relleno y el nombre subrayado, no con color. */
+.tile[aria-current="true"] { background: var(--wash); border-color: var(--ink-line); }
+.tile[aria-current="true"] .tile__ico { color: var(--ink); }
+.tile[aria-current="true"] .tile__name { text-decoration: underline; text-underline-offset: 3px; }
+.tile[aria-current="true"] .ico__body { fill: var(--tint); }
+
+/* Las acciones sólo asoman donde está el puntero o el foco: si estuvieran
+   siempre, la retícula serían cien puntos suspensivos. */
+.tile__more {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.25rem;
+  display: grid;
+  place-items: center;
+  width: 1.35rem;
+  height: 1.35rem;
   border: 0;
-  border-bottom: 1px solid var(--ink-line);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s ease, color 0.2s ease, background-color 0.2s ease;
+}
+
+.grid__cell:hover .tile__more,
+.grid__cell:focus-within .tile__more { opacity: 1; }
+.tile__more:hover { color: var(--ink); background: var(--tint); }
+.tile__more:focus-visible { opacity: 1; outline: 1px solid var(--ink-faint); outline-offset: 1px; }
+
+/* Renombrar y crear son lo mismo: la baldosa se convierte en un campo y la celda
+   no se mueve del sitio. */
+.tile--edit { cursor: default; background: var(--wash); border-color: var(--ink-line); }
+
+.tile__field {
+  width: 100%;
+  text-align: center;
+  border: 0;
+  border-bottom: 1px solid var(--ink);
   background: transparent;
   color: var(--ink);
   font: inherit;
-  font-size: 0.83rem;
+  font-size: 0.78rem;
+  padding: 0.1rem 0;
 }
 
-.fold__field:focus { outline: none; border-bottom-color: var(--ink); }
-.fold__field::placeholder { color: rgba(20, 23, 28, 0.3); }
+.tile__field:focus { outline: none; }
+.tile__field::placeholder { color: var(--ghost); }
 
-/* De qué Notion es esto y cómo cambiarlo. Al final de la lista y en voz baja:
-   era una pestaña entera para un dato que no cambia nunca. */
-.wfoot {
-  margin-top: 1.2rem;
-  padding-top: 0.7rem;
-  border-top: 1px solid var(--ink-line);
-  font-size: 0.72rem;
+/* Una carpeta vacía, o lo que se está pidiendo: ocupa la fila entera. */
+.grid__note {
+  grid-column: 1 / -1;
+  list-style: none;
+  padding: 0.5rem 0.2rem;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  font-weight: 300;
 }
 
-.wfoot__where { color: var(--ink-soft); }
+/* --- trazos de interfaz -------------------------------------------------- */
+
+/* Todo icono es trazo y hereda el color del texto: así una baldosa señalada, un
+   botón apagado o el tema oscuro no necesitan una figura aparte. */
+.ico {
+  display: block;
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+}
+
+.ico--small { width: 13px; height: 13px; stroke-width: 1.7; }
+
+/* --- el menú de una baldosa ---------------------------------------------- */
+
+/* Cuelga del <body>: la franja recorta lo que se sale de ella —es lo que le da
+   las esquinas— y este menú tiene que poder crecer por encima. Lo coloca
+   `ui/dock/menu.ts`. */
+.menu-pop {
+  position: fixed;
+  z-index: 12;
+  min-width: 11.5rem;
+  display: flex;
+  flex-direction: column;
+  padding: 0.25rem;
+  background: var(--paper);
+  border: 1px solid var(--ink-line);
+  border-radius: var(--r-panel);
+  box-shadow: var(--shadow);
+}
+
+.menu-pop.is-in { animation: menu-in 0.16s var(--out-quart) both; }
+
+@keyframes menu-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.menu-pop__item {
+  text-align: left;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 300;
+  padding: 0.5rem 0.6rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.menu-pop__item:hover { background: var(--wash); }
+.menu-pop__item:focus-visible { background: var(--wash); outline: 1px solid var(--ink-faint); outline-offset: -1px; }
+
+/* Lo que borra se dice en su color, y al armarse se queda dicho entero: el
+   segundo clic ya lee la consecuencia, no una pregunta suelta. */
+.menu-pop__item--risk { color: var(--bad); }
+.menu-pop__item--risk.is-armed { background: var(--tint); }
 
 @media (prefers-reduced-motion: reduce) {
-  .fold__mark, .fold__acts, .fold__act { transition: none; }
-  .fold__acts { opacity: 1; }
+  .menu-pop.is-in { animation: none; }
+  .tile, .tile__ico, .tile__more { transition: none; }
+  .tile__more { opacity: 1; }
 }
 
 /* --- ajustes de IA (Fase 5) ---------------------------------------------- */

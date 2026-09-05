@@ -1,8 +1,14 @@
 /* ============================================================
    Tokens y base — el único sitio donde se declaran color,
-   tipografía y curvas. Los valores son los originales de la
-   intro; toda la interfaz nueva se construye con estos y no
+   tipografía y curvas. Los valores claros son los originales de
+   la intro; toda la interfaz nueva se construye con estos y no
    añade acentos, sombras de color ni degradados.
+
+   Nada de color literal fuera de aquí: es lo que permite que el
+   tema oscuro sea una sola tabla y no una revisión de cada
+   componente. Lo elige la persona en la bandeja de la franja
+   (`ui/dock/tray.ts`) y lo aplica `core/state/theme.ts`
+   escribiendo `data-theme` en el <html>.
    ============================================================ */
 
 :root {
@@ -11,6 +17,21 @@
   --ink-soft: #5b636e;
   --ink-faint: rgba(20, 23, 28, 0.18);
   --ink-line: rgba(20, 23, 28, 0.14);
+
+  /* Fondos de gesto: una fila señalada, un `code`, un icono. */
+  --wash: rgba(20, 23, 28, 0.028);
+  --tint: rgba(20, 23, 28, 0.045);
+  /* El texto de sugerencia de un campo vacío. */
+  --ghost: rgba(20, 23, 28, 0.3);
+  /* Lo que falló. No es el único indicio: el texto también lo dice. */
+  --bad: #a3341f;
+
+  /* Un panel suelto sobre la página: la franja, la ventana del asistente y las
+     ventanitas de la bandeja son el mismo objeto y se declaran una vez. */
+  --r-panel: 3px;
+  --shadow: 0 14px 40px rgba(20, 23, 28, 0.14);
+  --shadow-lift: 0 3px 10px rgba(20, 23, 28, 0.22);
+  --shadow-lift-on: 0 5px 14px rgba(20, 23, 28, 0.3);
 
   --sans: "Segoe UI Variable Display", "Segoe UI", Inter, -apple-system,
           BlinkMacSystemFont, system-ui, "Helvetica Neue", Arial, sans-serif;
@@ -21,6 +42,36 @@
   --out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --out-quart: cubic-bezier(0.25, 1, 0.5, 1);
   --in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  color-scheme: light;
+}
+
+/* El mismo papel, del otro lado. No es el claro invertido: la tinta baja de
+   blanco puro —deslumbra sobre un fondo oscuro— y las líneas suben de alfa,
+   porque un hilo claro sobre oscuro desaparece antes que uno oscuro sobre
+   claro. Las sombras dejan de ser tinta diluida y pasan a ser negro: sobre un
+   fondo oscuro una sombra gris aclara en vez de levantar.
+
+   El avión de la intro no cambia: sus cinco caras son grises medios y su
+   iluminación está calibrada en `scene.js`, que no se toca (plan.md §2). En
+   oscuro se lee como un papel iluminado sobre un campo negro. */
+:root[data-theme="dark"] {
+  --paper: #14171c;
+  --ink: #eaeef3;
+  --ink-soft: #98a1ad;
+  --ink-faint: rgba(234, 238, 243, 0.24);
+  --ink-line: rgba(234, 238, 243, 0.17);
+
+  --wash: rgba(234, 238, 243, 0.05);
+  --tint: rgba(234, 238, 243, 0.08);
+  --ghost: rgba(234, 238, 243, 0.32);
+  --bad: #e79379;
+
+  --shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+  --shadow-lift: 0 3px 12px rgba(0, 0, 0, 0.5);
+  --shadow-lift-on: 0 6px 18px rgba(0, 0, 0, 0.6);
+
+  color-scheme: dark;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -36,10 +87,17 @@ html, body {
   text-rendering: optimizeLegibility;
 }
 
-body { overflow: hidden; }
+/* Cambiar de tema no es una animación: se cruza el fondo y el texto para que no
+   parpadee la página entera. Lo demás cambia de golpe, que es lo honesto. */
+html { transition: background-color 0.4s var(--out-quart); }
+body { overflow: hidden; transition: color 0.4s var(--out-quart); }
 
 .sr-only {
   position: absolute; width: 1px; height: 1px;
   padding: 0; margin: -1px; overflow: hidden;
   clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html, body { transition: none; }
 }

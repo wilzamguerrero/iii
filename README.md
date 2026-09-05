@@ -65,21 +65,22 @@ igual medio segundo después de la pasada.
 | archivo                 | de qué se ocupa                                              |
 |-------------------------|--------------------------------------------------------------|
 | `index.html`            | estructura, capas (`z-index`) y el SVG del botón             |
-| `src/styles/tokens.css` | color, tipografía, curvas y reset — la única fuente          |
+| `src/styles/tokens.css` | color, tipografía, curvas, reset y la tabla del tema oscuro  |
 | `src/styles/intro.css`  | cortinas de revelado, menú, grano, *responsive*              |
-| `src/styles/dock.css`   | la franja de abajo, las carpetas y los primitivos del panel   |
+| `src/styles/dock.css`   | la franja, sus pestañas, las baldosas y los primitivos del panel |
 | `src/styles/assistant.css` | el tirador de papel y la ventana flotante del asistente    |
 | `src/app.ts`            | entrada; orden de arranque y cierre del viaje de OAuth        |
 | `src/boot/`             | lo que tiene que pasar antes de la intro (la URL de OAuth)    |
 | `src/core/store.ts`     | estado compartido: `get`, `set`, `subscribe`                  |
 | `src/core/notion/`      | oauth, cliente, tipos y las carpetas de proyectos y documentos |
 | `src/core/ai/`          | proveedores (los tres y los propios), claves, modelos, alta por dispositivo, el hilo |
-| `src/core/state/`       | lo que el asistente ve: la intención y la página abierta      |
+| `src/core/state/`       | la intención, la página abierta y el tema (claro/oscuro/auto) |
 | `src/core/persist/`     | la sesión de Notion, guardada entre visitas                   |
 | `src/ui/dom.ts`         | `el()`, `render()`, `debounce` — nunca `innerHTML`            |
 | `src/ui/origami.ts`     | la figura de papel, una sola fuente para los dos botones      |
+| `src/ui/icons.ts`       | los trazos de la interfaz: carpeta, página, silueta, mandos   |
 | `src/ui/drag.ts`        | arrastrar, recordar dónde se dejó y no salirse de la pantalla |
-| `src/ui/dock/`          | la franja: `dock` (el filo), `workspace` (Notion) y `folders`  |
+| `src/ui/dock/`          | la franja: `dock` (el filo), `tabs`, `tray`, `workspace`, `folders`, `menu` |
 | `src/ui/assistant/`     | el tirador y la ventana de conversación                       |
 | `src/main.js`           | ajustes, línea de tiempo, paso a menú, eventos               |
 | `src/scene.js`          | render, cámara, luces de estudio, niebla blanca              |
@@ -114,15 +115,42 @@ Cuando termina la intro aparece un filo en el borde inferior. Se abre y trae el
 Es lo que se construye encima; la pantalla de inicio sigue siendo una pregunta y nada
 más.
 
+Es **un panel, no una barra**: el mismo borde de 1 px, las mismas esquinas redondeadas
+y la misma sombra que la ventana del asistente —los tres salen de `--r-panel` y
+`--shadow`, declarados una vez en los tokens— y **no llega a los lados de la pantalla**.
+Ese hueco a izquierda y derecha es lo que la hace leerse como una pestaña que sube desde
+abajo en vez de como el pie de la página. Por abajo sí llega al filo, que es de donde
+sale. Plegada, lo único que queda a la vista es la tira de arriba con sus esquinas ya
+redondeadas.
+
 Empezó con tres pestañas —Proyectos, Notion e IA— y se quedó en una sola pantalla.
-Los ajustes de IA se fueron a la ventana del asistente, que es donde se nota lo que
-configuran, y Notion se disolvió dentro de Proyectos: conectar es el primer paso de
-esa pantalla, y una vez conectada queda como una línea al final de la lista —de qué
-espacio es, cambiar raíz, desconectar—.
+Notion se disolvió dentro de Proyectos: conectar es el primer paso de esa pantalla, y
+una vez conectada queda en la bandeja del extremo derecho, con los ajustes de IA y los
+del sistema.
 
 Abierta empuja el formulario hacia arriba en vez de taparlo, y sólo mueve la capa
 del menú: mover `.stage` arrastraría el lienzo y con él el punto de vista de la
 escena. Recuerda si quedó abierta. Se cierra con `Esc`.
+
+### Pestañas
+
+La tira lleva **pestañas de navegación**: cada una es un recorrido propio por las
+carpetas. En el menú de una carpeta está «Abrir en otra pestaña», y así se puede tener
+la tesis en una y las fuentes en otra sin perder el sitio en ninguna. Cada pestaña se
+llama como la carpeta en la que está y cambia de nombre al entrar y salir; se cierra con
+su «×» —la última no— y se pasa de una a otra con las flechas cuando tienen el foco.
+
+Cambiar de pestaña **no vuelve a pedir nada**. Cada una guarda su propio espacio de
+trabajo montado y vivo, con lo que ya había leído: Notion admite unas tres peticiones
+por segundo y cambiar de pestaña es un gesto que se repite. Lo que sí es común a todas
+—de quién es la sesión, cuál es la página raíz, el aviso de un error— vive una sola vez
+y se repinta en todas a la vez.
+
+No son las pestañas que hubo al principio. Aquéllas eran secciones —Proyectos, Notion e
+IA— y se quitaron a propósito (`plan.md` §12 D6): partían una sola pantalla en tres.
+Éstas abren varias veces la misma.
+
+### Notion
 
 La conexión con Notion pide un `.env` con las credenciales de una integración
 pública (ver `.env.example`). El `client_secret` vive sólo en `api/`: el navegador
@@ -133,20 +161,54 @@ otra vez— y el `code` se borra de la barra de direcciones en el mismo turno en
 se lee. De eso se ocupa `src/boot/oauth-callback.ts`, que se importa antes que
 `main.js` porque `main.js` lee `?intro=0` al evaluarse.
 
+### Las carpetas
+
 Cada **carpeta** es una lista desplegable de Notion y cada **documento** un bloque de
 código en markdown dentro, con el nombre en el pie del bloque. Así el documento se
 lee y se guarda de una vez, sin rearmar un árbol de bloques en cada guardado.
 
-Las carpetas **se recorren en horizontal**: la fila de arriba dice dónde estás
-—`PROYECTOS / TESIS DE GRADO`— y debajo va sólo el contenido de esa carpeta. Se entra
-pulsando la carpeta y se vuelve pulsando una miga del camino; crear ocurre donde estás,
-así que los botones de crear viven en esa misma fila y cambian con ella. Una carpeta
-puede contener otras. El contenido se pide **al entrar**, no de golpe: Notion admite
-unas tres peticiones por segundo y no vale gastarlas en listas que nadie va a mirar.
+Las carpetas **se recorren en horizontal** y se ven como **baldosas**: un icono grande y
+el nombre debajo, en una rejilla que se acomoda al ancho. La fila fija de cada pestaña
+dice dónde estás —`PROYECTOS / TESIS DE GRADO`— y debajo va sólo el contenido de esa
+carpeta. Se entra pulsando la baldosa y se vuelve pulsando una miga del camino; crear
+ocurre donde estás, así que los botones de crear viven en esa misma fila y cambian con
+ella. Una carpeta puede contener otras. El contenido se pide **al entrar**, no de golpe:
+Notion admite unas tres peticiones por segundo y no vale gastarlas en listas que nadie
+va a mirar.
 
-Los **ajustes de IA** están en la ventana del asistente, en «Ajustes», y no guardan
-ninguna clave en el servidor. Se elige proveedor —OpenRouter, NVIDIA o GitHub—, se pega
-la clave (o se conecta la cuenta de GitHub escribiendo un código corto en
+Cada baldosa tiene su menú —el «⋯» de la esquina o el botón derecho— con abrir, «Abrir
+en otra pestaña», renombrar y eliminar; eliminar pregunta en su propia etiqueta en vez
+de abrir un diálogo del navegador. Un documento abierto en otra pestaña abre la carpeta
+donde vive y se queda seleccionado: una pestaña es un sitio, no un archivo.
+
+### El extremo derecho
+
+En el extremo de la tira hay tres botones que no son el espacio de trabajo pero se
+gobiernan desde el mismo borde, porque son de la aplicación entera y no de la carpeta que
+se esté mirando:
+
+- **La cuenta de Notion** —el icono del espacio, o una silueta mientras no haya sesión—:
+  de qué espacio es, cambiar la página raíz y desconectar. Sin sesión, la misma
+  invitación a conectar que la franja, en pequeño.
+- **Los ajustes de IA**, con la forma del avión de papel. No son una copia de los de la
+  ventana del asistente: los dos leen y escriben la misma configuración, así que lo que
+  se cambie aquí ya está cambiado allí.
+- **Los ajustes del sistema**: por ahora el tema, y sitio para lo que vaya haciendo
+  falta.
+
+Los tres se abren **con la franja plegada**, y es la razón de que estén aquí y no dentro:
+la tira es lo único que queda a la vista al plegarse, así que se llega a los ajustes sin
+abrirla. Sus ventanitas cuelgan del `<body>` y no del panel —el panel recorta lo que se
+sale de él, que es lo que le da las esquinas, y éstas crecen hacia arriba por encima de
+él—, se anclan por abajo y por la derecha para que cambiar de alto no las mueva, y al
+plegar o desplegar la franja se cierran en vez de perseguir al botón que las abrió.
+
+### Los ajustes de IA
+
+Están en dos sitios que son el mismo: «Ajustes» en la ventana del asistente y el botón de
+papel de la franja. No guardan ninguna clave en el servidor. Se elige proveedor
+—OpenRouter, NVIDIA o GitHub—, se pega la clave (o se conecta la cuenta de GitHub
+escribiendo un código corto en
 `github.com/login/device`, como en las herramientas de consola) y se elige modelo del
 catálogo real, que se guarda una hora. Si el servidor tiene su propia clave en el
 entorno, lo dice y no hace falta pegar nada.
@@ -197,6 +259,22 @@ razona y si es gratis. Cuando una API no tiene `/models` —o lo tiene detrás d
 clave— la lista sale del registro y se dice ahí mismo, en vez de fingir que la dio el
 proveedor. `gratis` sólo se marca donde el proveedor publica precios: NVIDIA declara
 todo a coste cero y eso no significa nada.
+
+### El tema
+
+Claro, oscuro o automático, y se elige en los ajustes del sistema. Todo el color de la
+plataforma sale de `src/styles/tokens.css`, así que el tema oscuro es una segunda tabla
+de variables en ese mismo archivo (`:root[data-theme="dark"]`) y no una hoja aparte.
+«Automático» sigue al del sistema y cambia con él sin recargar.
+
+**La intro no cambia de color.** El lienzo es transparente y el blanco lo pone el CSS, y
+la coreografía está calibrada contra ese blanco, así que la escena sigue siendo blanca en
+los dos temas: el tema es de la plataforma que se construye encima.
+
+La elección se aplica en un `<script>` clásico dentro de `index.html`, antes que
+cualquier otra cosa: un módulo diferido pintaría el blanco primero y se vería el salto.
+De ahí en adelante gobierna `src/core/state/theme.ts`, que es también quien escucha al
+sistema.
 
 ## El asistente
 

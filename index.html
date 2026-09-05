@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<meta name="color-scheme" content="light" />
+<meta name="color-scheme" content="light dark" />
 <title>Intención</title>
 <meta name="description" content="Ningún proyecto nace de un problema. Nace de una intención." />
 
@@ -11,6 +11,20 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap" />
 <link rel="stylesheet" href="./src/styles/app.css" />
+
+<!-- El tema, antes de pintar. Si se dejara sólo a core/state/theme.ts —un módulo,
+     y por tanto diferido— la página daría un fogonazo blanco antes de ponerse oscura.
+     Aquí se resuelve la primera pintada y nada más; quien lo gobierna sigue siendo
+     ese módulo, y la clave guardada es la misma. -->
+<script>
+  (function () {
+    try {
+      var t = localStorage.getItem('3i.theme') || 'auto';
+      if (t === 'auto') t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      document.documentElement.dataset.theme = t;
+    } catch (e) { document.documentElement.dataset.theme = 'light'; }
+  })();
+</script>
 
 <!-- Los módulos ES no cargan desde file://. Guardia en script clásico para poder avisarlo. -->
 <script>if (location.protocol === 'file:') document.documentElement.classList.add('is-file');</script>

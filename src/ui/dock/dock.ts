@@ -1,16 +1,27 @@
 import { el } from "../dom.ts";
 import { onMenuVisible } from "../afterIntro.ts";
+import { closeMenu } from "./menu.ts";
+import { mountTabs } from "./tabs.ts";
+import { mountTray } from "./tray.ts";
 import { mountWorkspace } from "./workspace.ts";
 
 /**
  * La franja de abajo: el espacio de trabajo.
  *
- * Tenía tres pestañas —Proyectos · Notion · IA— y ya no tiene ninguna. La de IA
- * se fue a la ventana del asistente, que es donde se usa lo que configura; la de
- * Notion se disolvió dentro de Proyectos, porque conectar es el primer paso de
- * esa pantalla y no un sitio aparte. Lo que queda es una cosa sola, y una cosa
- * sola no necesita pestañas: la fila de arriba dice dónde estás dentro de las
- * carpetas y el cuerpo muestra su contenido.
+ * Es una pestaña que asoma desde abajo. No llega a los bordes: se separa a los
+ * lados, y así se lee como una hoja que sube por delante de la página en vez de
+ * como un borde de la ventana. Por eso es el mismo objeto que la ventana del
+ * asistente —1 px de borde, esquinas de `--r-panel`, `--shadow`— y no un mueble
+ * aparte: en esta interfaz todo lo que flota se parece.
+ *
+ * Plegada queda a la vista sólo su filo de arriba, y ese filo es la barra de
+ * pestañas: el nombre de dónde estás, y a la derecha la bandeja. Los ajustes se
+ * alcanzan sin abrir nada.
+ *
+ * Tuvo pestañas de *sección* —Proyectos · Notion · IA— y se quitaron (plan.md
+ * §12, D6): partían una pantalla en tres sitios a los que había que ir y volver.
+ * Las de ahora son de *sitio*, como las de un navegador: cada una es una carpeta
+ * abierta. Lo que se descartó fue esconder secciones, no poder mirar dos cosas.
  *
  * Vive fuera de `.stage` a propósito. Dentro heredaría el apilamiento del lienzo
  * y no podría quedar por encima; fuera puede además desplazar sólo la capa del
@@ -38,39 +49,54 @@ function recall(key: string): string | null {
 }
 
 export function mountDock(): Dock {
+  // Declarados antes de armar nada: las piezas de dentro reciben devoluciones que
+  // tocan este estado, y una de ellas podría llamarla mientras se monta.
+  let open = false;
+  let revealed = false;
+
   const chev = el("span", { class: "dock__chev", attrs: { "aria-hidden": "true" } });
-  const handle = el("button", {
-    class: "dock__handle",
-    attrs: { type: "button", "aria-expanded": "false", "aria-controls": "dock-body" },
-  }, [el("span", { text: "Espacio de trabajo" }), chev]);
+  const toggle = el("button", {
+    class: "dock__toggle",
+    attrs: {
+      type: "button", "aria-expanded": "false", "aria-controls": "dock-body",
+      title: "Espacio de trabajo", "aria-label": "Abrir el espacio de trabajo",
+    },
+  }, [chev]);
 
   /**
-   * La fila de arriba se queda fija y sólo el cuerpo se desplaza: al bajar por
-   * una carpeta larga, el camino de vuelta tiene que seguir a la vista. Está
-   * vacía mientras no haya carpetas que recorrer, y vacía no ocupa (`:empty`).
+   * Cada pestaña monta su propia pantalla y la conserva viva mientras exista, así
+   * que cambiar de pestaña no cuesta ninguna petición a Notion. `mountWorkspace`
+   * se encarga de que lo compartido —de quién es la sesión, qué raíz, qué error—
+   * sea igual en todas.
    */
-  const head = el("div", { class: "dock__head" });
-  const pane = el("div", { class: "dock__pane" });
+  const tabs = mountTabs({
+    mount: (slots) => mountWorkspace(slots),
+    toggle: () => { setOpen(false); },
+    reveal: () => { openDock(); },
+  });
+
+  const tray = mountTray({ openDock: () => { openDock(); } });
+
+  /** El filo: lo único que se ve plegada. */
+  const strip = el("div", { class: "dock__strip" }, [toggle, tabs.strip, tray.root]);
 
   const body = el("div", { class: "dock__body", attrs: { id: "dock-body", inert: true } },
-    [head, pane]);
+    [tabs.views]);
 
   const dock = el("aside", {
     class: "dock",
     attrs: { id: "dock", "data-open": "false", hidden: true },
-  }, [handle, body]);
-
-  mountWorkspace({ head, pane });
+  }, [strip, body]);
 
   /* --- abrir y cerrar ---------------------------------------------------- */
-
-  let open = false;
 
   function setOpen(next: boolean): void {
     if (open === next) return;
     open = next;
     dock.dataset.open = String(next);
-    handle.setAttribute("aria-expanded", String(next));
+    toggle.setAttribute("aria-expanded", String(next));
+    toggle.setAttribute("aria-label",
+      next ? "Cerrar el espacio de trabajo" : "Abrir el espacio de trabajo");
     // `inert` saca el cuerpo del recorrido del tabulador y del árbol de
     // accesibilidad mientras está fuera de cuadro, sin romper la transición como
     // haría `display: none`.
@@ -78,9 +104,18 @@ export function mountDock(): Dock {
     else body.setAttribute("inert", "");
     document.body.dataset.dock = next ? "open" : "closed";
     remember(OPEN_KEY, next ? "1" : "0");
+
+    // Lo que cuelga del `<body>` está anclado a un botón que acaba de moverse
+    // medio panel hacia arriba o hacia abajo. Se cierra en vez de recolocarse:
+    // el movimiento dura y una ventanita persiguiéndolo se lee como un error.
+    tray.close();
+    closeMenu(false);
   }
 
-  handle.addEventListener("click", () => { setOpen(!open); });
+  toggle.addEventListener("click", () => {
+    if (open) { setOpen(false); return; }
+    openDock();
+  });
 
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape" || !open) return;
@@ -88,12 +123,11 @@ export function mountDock(): Dock {
     const target = event.target;
     if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
     setOpen(false);
-    handle.focus();
+    toggle.focus();
   });
 
   /* --- entrada ----------------------------------------------------------- */
 
-  let revealed = false;
   const startOpen = recall(OPEN_KEY) === "1";
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -121,6 +155,23 @@ export function mountDock(): Dock {
     if (startOpen) setTimeout(() => { setOpen(true); }, still || !animate ? 0 : 760);
   }
 
+  /** Abrirla desde fuera, esté ya a la vista o no. */
+  function openDock(): void {
+    const fresh = !revealed;
+    reveal(!fresh);
+
+    if (!fresh) {
+      setOpen(true);
+      return;
+    }
+    // Dos fotogramas para que el navegador haya calculado la posición cerrada
+    // antes de pedirle la abierta. Sin esa lectura intermedia agrupa los dos
+    // cambios y la transición no ocurre: aparecería abierta de golpe.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => { setOpen(true); });
+    });
+  }
+
   document.body.append(dock);
   document.body.dataset.dock = "closed";
 
@@ -131,23 +182,7 @@ export function mountDock(): Dock {
 
   return {
     reveal: () => { reveal(); },
-
-    open() {
-      const fresh = !revealed;
-      reveal(!fresh);
-
-      if (!fresh) {
-        setOpen(true);
-        return;
-      }
-      // Dos fotogramas para que el navegador haya calculado la posición cerrada
-      // antes de pedirle la abierta. Sin esa lectura intermedia agrupa los dos
-      // cambios y la transición no ocurre: aparecería abierta de golpe.
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => { setOpen(true); });
-      });
-    },
-
-    close() { setOpen(false); },
+    open: () => { openDock(); },
+    close: () => { setOpen(false); },
   };
 }

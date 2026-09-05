@@ -28,13 +28,13 @@
   background: transparent;
   cursor: grab;
   touch-action: none;
-  filter: drop-shadow(0 3px 10px rgba(20, 23, 28, 0.22));
+  filter: drop-shadow(var(--shadow-lift));
   transition: filter 0.3s ease;
 }
 
 .ai-handle[hidden] { display: none; }
 .ai-handle.is-moving { cursor: grabbing; }
-.ai-handle:hover { filter: drop-shadow(0 5px 14px rgba(20, 23, 28, 0.3)); }
+.ai-handle:hover { filter: drop-shadow(var(--shadow-lift-on)); }
 
 .ai-handle__ori { width: 36px; height: 36px; overflow: visible; }
 
@@ -73,8 +73,8 @@
   max-height: min(62vh, 540px);
   background: var(--paper);
   border: 1px solid var(--ink-line);
-  border-radius: 3px;
-  box-shadow: 0 14px 40px rgba(20, 23, 28, 0.14);
+  border-radius: var(--r-panel);
+  box-shadow: var(--shadow);
   overflow: hidden;
 }
 
@@ -189,13 +189,13 @@
   align-self: flex-end;
   max-width: 86%;
   padding: 0.45rem 0.65rem;
-  background: rgba(20, 23, 28, 0.045);
-  border-radius: 3px;
+  background: var(--tint);
+  border-radius: var(--r-panel);
   color: var(--ink);
 }
 
 .ai-turn--wait { color: var(--ink-soft); animation: ai-pulse 1.4s ease-in-out infinite; }
-.ai-turn--bad { color: #a3341f; }
+.ai-turn--bad { color: var(--bad); }
 
 @keyframes ai-pulse {
   0%, 100% { opacity: 0.35; }
@@ -262,7 +262,7 @@
 }
 
 .ai-pop__field:focus { outline: none; }
-.ai-pop__field::placeholder { color: rgba(20, 23, 28, 0.32); }
+.ai-pop__field::placeholder { color: var(--ghost); }
 
 /* El mismo papel, más pequeño: enviar es enviar en las dos pantallas. */
 .ai-pop__send {

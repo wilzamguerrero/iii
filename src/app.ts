@@ -23,6 +23,7 @@ import { mountAssistant } from "./ui/assistant/assistant.ts";
 import { mountDock } from "./ui/dock/dock.ts";
 import { notionExchangeFailed, notionExchangeStarted } from "./ui/dock/workspace.ts";
 import { rememberIntent } from "./core/state/intent.ts";
+import { startTheme } from "./core/state/theme.ts";
 
 export interface IntentSubmitDetail {
   /** Lo que la persona escribió o dictó, ya recortado. */
@@ -36,6 +37,14 @@ declare global {
     "intent:submit": CustomEvent<IntentSubmitDetail>;
   }
 }
+
+/**
+ * El tema. La primera pintada ya la resolvió el script suelto de `index.html`
+ * —los módulos van diferidos y llegarían tarde—; esto engancha lo que hace falta
+ * después: repintar cuando la persona lo cambia en la bandeja y seguir al
+ * sistema mientras esté en «automático».
+ */
+startTheme();
 
 const dock = mountDock();
 mountAssistant();
