@@ -64,7 +64,60 @@ export class Phrase {
     return this.totalDelay + REVEAL_DUR;
   }
 
-  reveal() {
+  /**
+   * ¿Ha llegado el avión a la frase? El revelado no va por reloj: lo dispara
+   * el avión al entrar en la banda del texto. Así las palabras no aparecen
+   * solas, las deja él al pasar.
+   * @param {{x:number,y:number,vx:number,vy:number,valid:boolean}|null} screen
+   */
+  cued(screen) {
+    if (!screen || !screen.valid || Math.abs(screen.vx) < 40) return false;
+    const r = this.el.getBoundingClientRect();
+    const band = Math.max(150, r.height * 1.6);
+    if (screen.y < r.top - band || screen.y > r.bottom + band) return false;
+    return screen.vx > 0 ? screen.x > r.left : screen.x < r.right;
+  }
+
+  /**
+   * Reparte los retardos según por dónde va el avión: cada palabra sube cuando
+   * la estela le pasa por encima, no por su número de orden.
+   */
+  sweepDelays(screen, rate) {
+    const dir = screen.vx >= 0 ? 1 : -1;
+    const speed = Math.max(180, rate || Math.abs(screen.vx));
+
+    // Cuánto tarda la estela en llegar a cada palabra dentro de su propio
+    // renglón, entendiendo por renglón el que dibuja el navegador y no el verso:
+    // en una pantalla estrecha un verso ocupa dos o tres.
+    const rows = [];
+    const info = this.words.map((w) => {
+      const r = w.mask.getBoundingClientRect();
+      const edge = dir > 0 ? r.left : r.right;
+      const reach = Math.min(2, Math.max(0, (edge - screen.x) * dir) / speed);
+      let row = rows.find((q) => Math.abs(q.top - r.top) < 6);
+      if (!row) rows.push((row = { top: r.top, span: 0, at: 0 }));
+      row.span = Math.max(row.span, reach);
+      return { reach, row };
+    });
+
+    // Y encadenarlos: cada renglón arranca con el anterior a medias. Repartiendo
+    // sólo por x se cruzaban en cuanto la frase se envolvía — la primera palabra
+    // de abajo salía antes que la última de arriba.
+    for (let i = 1; i < rows.length; i++) {
+      rows[i].at = rows[i - 1].at + rows[i - 1].span * 0.5 + 0.12;
+    }
+
+    let max = 0;
+    this.words.forEach((w, i) => {
+      const d = info[i].row.at + info[i].reach;
+      w.word.style.transitionDelay = `${d.toFixed(3)}s`;
+      max = Math.max(max, d);
+    });
+    this.totalDelay = max;
+  }
+
+  reveal(screen = null, rate = 0) {
+    if (screen && screen.valid) this.sweepDelays(screen, rate);
     // Fuerza el reflow para que la transición arranque desde el estado inicial.
     void this.el.offsetHeight;
     this.el.classList.add("is-in");
@@ -197,13 +250,14 @@ export class Phrase {
   }
 
   /** Por si alguna palabra quedó fuera del barrido: nadie se queda en pantalla. */
-  scatterRest() {
+  scatterRest(dirX = 1) {
     if (!this.loose) return;
     const radius = Math.max(300, window.innerHeight * 0.44);
+    const sgn = dirX >= 0 ? 1 : -1;
     for (const w of this.words) {
       if (w.hit) continue;
       const perp = (this.rand() - 0.5) * radius;
-      this.impulse(w, 0.94, -0.34, perp, radius);
+      this.impulse(w, 0.94 * sgn, -0.34, perp, radius);
       w.vx *= 0.7;
       w.vy *= 0.7;
     }

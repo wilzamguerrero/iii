@@ -1,11 +1,15 @@
 /**
  * Coreografía del vuelo.
  *
- * Cuatro actos encadenados sin cortes:
- *   enter   el avión llega desde el fondo en una S descendente y se centra
- *   hover   se eleva y orbita mientras la frase se revela debajo
- *   attack  cae, encara la línea de texto y la barre de izquierda a derecha
- *   dive    sube, gira y se viene contra el objetivo hasta llenar el cuadro
+ * Cinco actos encadenados sin cortes:
+ *   enter   el avión llega desde el fondo, en una S descendente
+ *   pass    sigue de largo rozando la frase, que sube en su estela, y se va
+ *   gone    fuera de cuadro; la frase se queda sola y legible
+ *   attack  vuelve a entrar por el lado por donde salió y la barre
+ *   charge  el relevo: otro avión viene del fondo al frente y entrega el menú
+ *
+ * Nunca se detiene ni gira en seco: cada acto arranca con la posición y la
+ * dirección con que terminó el anterior.
  *
  * El alabeo no se anima a mano: se deduce de la curvatura de la trayectoria
  * (roll proporcional a la velocidad de giro), que es lo que hace que un vuelo
@@ -17,21 +21,23 @@ import { PaperPlane, makePaperMaterial, makePaperTexture } from "./origami.js";
 import { clamp, damp, ease, noise1, rng, smoothstep } from "./utils.js";
 
 export const TIME = {
-  enter: 3.5,
-  reveal: 4.1,
-  attack: 9.3,
-  attackDur: 2.3,
-  diveDur: 1.75,
+  enter: 3.7,      // del fondo hasta la cabecera de la frase
+  pass: 2.5,       // la pasada rozando el texto y la salida de cuadro
+  attackDur: 1.85, // el barrido
+  chargeDur: 2.7,  // el relevo, del fondo al frente
 };
+
+/**
+ * Sentido del barrido en x. El héroe sale de cuadro por el lado contrario y
+ * vuelve a entrar por ahí mismo, así que negar esto invierte los tres actos
+ * de golpe: la salida, la reentrada y hacia dónde vuelan las palabras.
+ */
+const SWEEP = -1;
+
+/** Cuál de los acompañantes rompe la formación y da el relevo. */
+const RELAY = 1;
 
 const HERO_SCALE = 0.66;
-
-const HOVER = {
-  cx: 0, cy: 2.05, cz: -5.0,
-  rx: 2.6, ry: 0.42, rz: 2.1,
-  speed: 0.86,
-  blend: 1.6,
-};
 
 /* Órbitas de reposo: lejos, pequeñas y fuera del bloque del menú. */
 const AMBIENT = [
@@ -144,14 +150,27 @@ export class Choreography {
       return { cfg, plane, flyer: new Flyer(), phase: R() * 6.283, born: cfg.born, target: new THREE.Vector3() };
     });
 
+    // Llegada: del fondo hasta justo antes de la primera palabra.
     this.entry = new THREE.CatmullRomCurve3(
       [
-        new THREE.Vector3(-9.5, 3.8, -26),
-        new THREE.Vector3(-4.2, 2.7, -17),
-        new THREE.Vector3(0.7, 1.55, -11),
-        new THREE.Vector3(3.5, 0.95, -6.6),
-        new THREE.Vector3(1.3, 0.55, -3.3),
-        new THREE.Vector3(-1.1, 0.66, -1.6),
+        new THREE.Vector3(-9.8 * -SWEEP, 4.4, -25),
+        new THREE.Vector3(-6.6 * -SWEEP, 3.2, -17),
+        new THREE.Vector3(-4.9 * -SWEEP, 1.85, -9.2),
+        new THREE.Vector3(-4.4 * -SWEEP, 1.05, -3.6),
+      ],
+      false, "centripetal", 0.5
+    );
+
+    // Pasada: roza la línea de texto de un extremo a otro y sigue hasta salir
+    // de cuadro. Es el mismo trazo, sin frenar: la frase sube en su estela.
+    this.passPath = new THREE.CatmullRomCurve3(
+      [
+        new THREE.Vector3(-4.4 * -SWEEP, 1.05, -3.6),
+        new THREE.Vector3(-3.3 * -SWEEP, 0.8, -1.95),
+        new THREE.Vector3(0, 0.76, -1.75),
+        new THREE.Vector3(3.4 * -SWEEP, 0.84, -1.95),
+        new THREE.Vector3(7.4 * -SWEEP, 1.35, -2.8),
+        new THREE.Vector3(14.5 * -SWEEP, 2.6, -5.0),
       ],
       false, "centripetal", 0.5
     );
@@ -161,14 +180,18 @@ export class Choreography {
     // origen y de morro: dos alas sueltas en el centro de la página.
     this.entry.getPointAt(0, this.pos);
     this.hero.mesh.position.copy(this.pos);
-    this.hero.mesh.lookAt(0.7, 1.55, -11);
+    this.entry.getPointAt(0.2, _v1);
+    this.hero.mesh.lookAt(_v1);
 
     this.state = "enter";
     this.stateT = 0;
-    this.hoverA = 0;
-    this.hoverFrom = new THREE.Vector3();
     this.attack = null;
-    this.dive = null;
+    this.charge = null;
+    this.relay = this.companions[RELAY];
+    this.relayPos = new THREE.Vector3();
+    this.trailSrc = null;
+    /** Instante absoluto del barrido. Lo fija quien sabe cuánto dura la frase. */
+    this.sweepAt = Infinity;
     this.flashed = false;
     this.baseFov = stage.camera.fov;
 
@@ -176,8 +199,39 @@ export class Choreography {
     this._prev = { x: 0, y: 0, valid: false };
   }
 
+  /** Sólo el barrido mueve palabras: la pasada de la llegada las deja intactas. */
   get sweeping() {
-    return this.state === "attack" || this.state === "dive";
+    return this.state === "attack";
+  }
+
+  /** Sentido del barrido, para que la frase sepa hacia dónde caer. */
+  get sweepDir() {
+    return SWEEP;
+  }
+
+  /**
+   * Velocidad media en pantalla de la pasada, en px/s. La instantánea no sirve
+   * de referencia: en el momento del disparo el avión viene casi de frente y
+   * apenas se desplaza en x, aunque medio segundo después cruce todo el cuadro.
+   */
+  passRate() {
+    const { camera, size } = this.stage;
+    const at = (p) => {
+      this.passPath.getPointAt(Choreography.passEase(p), _v1);
+      return _v1.project(camera).x * 0.5 * size.w;
+    };
+    const a = 0.12;
+    const b = 0.62; // el tramo que cruza el texto
+    return Math.abs(at(b) - at(a)) / ((b - a) * TIME.pass);
+  }
+
+  /**
+   * A punto de barrer: hay que congelar la maquetación antes, no en caliente.
+   * Con movimiento reducido no hay barrido, así que tampoco hay que congelar
+   * nada: la frase se va como vino y conviene que siga siendo texto en flujo.
+   */
+  armed(t) {
+    return !this.reduced && this.state === "gone" && t >= this.sweepAt - 0.6;
   }
 
   /** Posición y velocidad del héroe en píxeles, para las físicas del texto. */
@@ -195,54 +249,74 @@ export class Choreography {
     p.x = x; p.y = y; p.valid = true;
   }
 
-  hoverPoint(a, out) {
-    return out.set(
-      HOVER.cx + HOVER.rx * Math.sin(a * 0.66),
-      HOVER.cy + HOVER.ry * Math.sin(a * 1.05 + 0.7),
-      HOVER.cz + HOVER.rz * Math.cos(a * 0.49)
-    );
-  }
-
+  /**
+   * Vuelve a entrar por donde salió, cae sobre la línea y la barre. Los puntos
+   * van escritos como si el barrido fuese hacia +x; SWEEP los refleja.
+   */
   buildAttack() {
     const p = this.pos.clone();
-    const d = this.heroFlyer.dir.clone().multiplyScalar(1.3);
+    const d = this.heroFlyer.dir.clone().multiplyScalar(1.6);
     this.attack = new THREE.CatmullRomCurve3(
       [
         p,
         p.clone().add(d),
-        new THREE.Vector3(-4.2, 2.95, -2.6),
-        new THREE.Vector3(-6.5, 1.2, 0.9),
-        new THREE.Vector3(-3.0, 0.06, 1.45),
-        new THREE.Vector3(1.2, -0.05, 1.5),
-        new THREE.Vector3(4.6, 0.5, 1.1),
-        new THREE.Vector3(5.9, 1.5, -1.2),
+        new THREE.Vector3(-7.5 * SWEEP, 1.4, 0.4),
+        new THREE.Vector3(-3.0 * SWEEP, 0.06, 1.45),
+        new THREE.Vector3(1.2 * SWEEP, -0.05, 1.5),
+        new THREE.Vector3(4.6 * SWEEP, 0.5, 1.1),
+        new THREE.Vector3(5.9 * SWEEP, 1.5, -1.2),
+        new THREE.Vector3(10.5 * SWEEP, 2.6, -3.4),
       ],
       false, "centripetal", 0.5
     );
   }
 
-  buildDive() {
-    const p = this.pos.clone();
-    const d = this.heroFlyer.dir.clone().multiplyScalar(1.5);
-    this.dive = new THREE.CatmullRomCurve3(
+  /** El relevo rompe la formación y viene del fondo al frente. */
+  buildCharge() {
+    const c = this.relay;
+    const p = c.plane.mesh.position.clone();
+    const d = c.flyer.dir.clone().multiplyScalar(2.2);
+    this.charge = new THREE.CatmullRomCurve3(
       [
         p,
         p.clone().add(d),
-        new THREE.Vector3(4.6, 3.0, -6.2),
-        new THREE.Vector3(0.9, 2.2, -8.0),
-        new THREE.Vector3(0.15, 1.0, -3.4),
-        new THREE.Vector3(-0.15, 0.35, 1.6),
-        new THREE.Vector3(-0.45, -0.15, 7.3),
+        new THREE.Vector3(p.x * 0.45, 1.9, -12.0),
+        new THREE.Vector3(0.75, 1.1, -6.0),
+        new THREE.Vector3(0.2, 0.5, -1.2),
+        new THREE.Vector3(-0.1, 0.05, 3.2),
+        new THREE.Vector3(-0.35, -0.3, 7.6),
       ],
       false, "centripetal", 0.5
     );
   }
 
-  /** Primera mitad: recolocarse. Segunda: acelerar contra el objetivo. */
-  static diveEase(p) {
-    return p < 0.5
-      ? ease.outQuad(p * 2) * 0.34
-      : 0.34 + 0.66 * ease.inQuart((p - 0.5) * 2);
+  /** Acelera al acercarse: lejos apenas se mueve, cerca llena el cuadro. */
+  static approachEase(p) {
+    return p * (0.68 + 0.32 * p);
+  }
+
+  /**
+   * Perfil de la pasada. La velocidad es una parábola con el mínimo sobre el
+   * texto: entra al ritmo con que venía, cruza a paso legible y sale
+   * acelerando. Nunca llega a cero — frenar es lo que hacía que pareciera
+   * detenerse y arrancar de nuevo en otra dirección.
+   */
+  static passEase(p) {
+    const a = 5;
+    const m = 0.3;
+    const k = (x) => x + (a * ((x - m) ** 3 + m ** 3)) / 3;
+    return k(p) / k(1);
+  }
+
+  /**
+   * El relevo se quita de encima la distancia larga y llega grande con tiempo
+   * de sobra. Lo que se nota en pantalla no es la velocidad, es el tamaño, y el
+   * tamaño va con la inversa de la distancia: avanzando a ritmo parejo el avión
+   * se queda diminuto casi hasta el final y el acercamiento entero se resuelve
+   * en dos fotogramas. Arranca deprisa, entre la niebla, y se abre despacio.
+   */
+  static chargeEase(p) {
+    return 0.88 * ease.outQuad(p) + 0.12 * p;
   }
 
   update(t, dt) {
@@ -251,19 +325,26 @@ export class Choreography {
     switch (this.state) {
       case "enter": {
         const p = clamp(this.stateT / TIME.enter, 0, 1);
-        this.entry.getPointAt(ease.outQuad(p), this.pos);
+        this.entry.getPointAt(Choreography.approachEase(p), this.pos);
+        // Sin corte: la pasada arranca donde acaba la llegada y con su rumbo.
         if (p >= 1) {
-          this.state = "hover";
+          this.state = "pass";
           this.stateT = 0;
-          this.hoverFrom.copy(this.pos);
         }
         break;
       }
-      case "hover": {
-        this.hoverA += dt * HOVER.speed;
-        this.hoverPoint(this.hoverA, _v1);
-        this.pos.copy(this.hoverFrom).lerp(_v1, smoothstep(0, HOVER.blend, this.stateT));
-        if (!this.reduced && t >= TIME.attack) {
+      case "pass": {
+        const p = clamp(this.stateT / TIME.pass, 0, 1);
+        this.passPath.getPointAt(Choreography.passEase(p), this.pos);
+        if (p >= 1) {
+          this.state = "gone";
+          this.stateT = 0;
+        }
+        break;
+      }
+      case "gone": {
+        // Fuera de cuadro. La frase se lee sola; el avión espera su turno.
+        if (!this.reduced && t >= this.sweepAt) {
           this.buildAttack();
           this.state = "attack";
           this.stateT = 0;
@@ -274,16 +355,22 @@ export class Choreography {
         const p = clamp(this.stateT / TIME.attackDur, 0, 1);
         this.attack.getPointAt(ease.inOutQuint(p), this.pos);
         if (p >= 1) {
-          this.buildDive();
-          this.state = "dive";
+          this.hero.mesh.visible = false;
+          this.buildCharge();
+          this.state = "charge";
           this.stateT = 0;
         }
         break;
       }
-      case "dive": {
-        const p = clamp(this.stateT / TIME.diveDur, 0, 1);
-        this.dive.getPointAt(Choreography.diveEase(p), this.pos);
-        if (!this.flashed && this.pos.distanceTo(this.stage.camera.position) < 1.25) {
+      case "charge": {
+        const p = clamp(this.stateT / TIME.chargeDur, 0, 1);
+        const c = this.relay;
+        this.charge.getPointAt(Choreography.chargeEase(p), this.relayPos);
+        c.plane.mesh.visible = true;
+        c.flyer.orient(c.plane.mesh, this.relayPos, dt, { extraRoll: p * 0.85 });
+        c.plane.flutter(t, 0.4 + p * 1.6);
+        this.trail(c.plane.mesh, clamp((c.flyer.speed - 5) / 20, 0, 1));
+        if (!this.flashed && this.relayPos.distanceTo(this.stage.camera.position) < 1.25) {
           this.flashed = true;
           this.onFlash();
         }
@@ -294,36 +381,37 @@ export class Choreography {
         break;
     }
 
-    if (this.state !== "done") {
+    if (this.state !== "done" && this.state !== "charge") {
       const sway = noise1(t * 0.7 + 1.3, 4) * 0.05;
-      const p = clamp(this.stateT / TIME.diveDur, 0, 1);
-      const extraRoll = this.state === "dive" ? p * 0.85 : 0;
-      this.heroFlyer.orient(this.hero.mesh, this.pos, dt, { extraRoll, sway });
+      this.heroFlyer.orient(this.hero.mesh, this.pos, dt, { sway });
       this.updateScreen(dt);
 
       const fast = clamp((this.heroFlyer.speed - 5) / 20, 0, 1);
       this.hero.flutter(t, 0.35 + fast * 1.5);
-      this.pushHistory(fast);
+      this.trail(this.hero.mesh, fast);
     }
 
     this.updateCompanions(t, dt);
     this.updateCamera(t, dt);
   }
 
-  pushHistory(fast) {
-    // Sin esto los primeros 18 fotogramas leen ranuras vacías y las estelas
-    // aparecen apiladas en el origen: un borrón fijo en mitad de la pantalla.
-    if (!this.histReady) {
+  /** La estela sigue al avión que manda en cada acto. */
+  trail(mesh, fast) {
+    // Sin sembrar el anillo, los primeros 18 fotogramas leen ranuras vacías y
+    // las estelas salen apiladas en el origen: un borrón fijo en la pantalla.
+    // Lo mismo al cambiar de avión, de ahí que el relevo lo vuelva a sembrar.
+    if (!this.histReady || this.trailSrc !== mesh) {
       for (const slot of this.hist) {
-        slot.p.copy(this.hero.mesh.position);
-        slot.q.copy(this.hero.mesh.quaternion);
+        slot.p.copy(mesh.position);
+        slot.q.copy(mesh.quaternion);
       }
       this.histReady = true;
+      this.trailSrc = mesh;
     }
     this.histHead = (this.histHead + 1) % HIST;
     const slot = this.hist[this.histHead];
-    slot.p.copy(this.hero.mesh.position);
-    slot.q.copy(this.hero.mesh.quaternion);
+    slot.p.copy(mesh.position);
+    slot.q.copy(mesh.quaternion);
 
     for (const g of this.ghosts) {
       const src = this.hist[(this.histHead - g.back + HIST * 2) % HIST];
@@ -340,6 +428,8 @@ export class Choreography {
   updateCompanions(t, dt) {
     for (const c of this.companions) {
       const { cfg, plane, flyer } = c;
+      // El relevo se pilota aparte mientras carga contra la cámara.
+      if (c === this.relay && this.state === "charge") continue;
       const alive = t > c.born;
       plane.mesh.visible = alive;
       if (!alive) continue;
@@ -368,8 +458,8 @@ export class Choreography {
 
     let fov = this.baseFov;
     let z = 6.4;
-    if (this.state === "dive") {
-      const p = clamp(this.stateT / TIME.diveDur, 0, 1);
+    if (this.state === "charge") {
+      const p = clamp(this.stateT / TIME.chargeDur, 0, 1);
       const k = ease.inQuad(clamp((p - 0.45) / 0.55, 0, 1));
       fov = this.baseFov + k * 12; // dolly-zoom al pasar el avión junto al objetivo
       z = 6.4 + k * 0.45;
@@ -400,6 +490,9 @@ export class Choreography {
       }
       const amb = AMBIENT[i];
       c.cfg = { ...c.cfg, c: amb.c, r: amb.r, scale: amb.scale };
+      // Vuelve a formación desde donde estaba: sin esto, el primer paso mide
+      // media escena y el alabeo se dispara.
+      c.flyer.primed = false;
     });
     const cam = this.stage.camera;
     cam.fov = this.baseFov;

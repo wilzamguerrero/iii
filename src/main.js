@@ -1,9 +1,10 @@
 /**
  * Orquestación: monta la escena, encadena los actos y entrega el menú.
  *
- * La línea de tiempo está en TIME (choreography.js). Los dos últimos hitos no
- * van por reloj sino por suceso: el fundido salta cuando el avión entra de
- * verdad en el objetivo, así que nunca se descuadra en un equipo lento.
+ * La línea de tiempo está en TIME (choreography.js), pero los dos hitos que
+ * se ven no van por reloj sino por suceso: la frase sube cuando el avión le
+ * pasa por encima y el fundido salta cuando entra de verdad en el objetivo.
+ * Así nada se descuadra en un equipo lento.
  */
 
 import { createStage } from "./scene.js";
@@ -114,24 +115,42 @@ function skipIntro() {
 
 /* ------------------------------------------------------------------- intro 3D */
 
+/** El revelado lo dispara el avión al llegar a la frase, no un cronómetro. */
+function startReveal(screen) {
+  revealed = true;
+  phrase.reveal(screen, screen ? choreo.passRate() : 0);
+  choreo.sweepAt = t + phrase.revealDuration + CONFIG.holdAfterReveal;
+  if (reduced) {
+    setTimeout(() => {
+      phrase.fadeOut();
+      setTimeout(() => flashToMenu(400), 520);
+    }, (phrase.revealDuration + 3) * 1000);
+  }
+}
+
 function tick(dt) {
   choreo.update(t, dt);
 
-  if (!revealed && t >= TIME.reveal) {
-    revealed = true;
-    phrase.reveal();
+  if (!revealed) {
+    if (choreo.state === "pass" && phrase.cued(choreo.screen)) {
+      startReveal(choreo.screen);
+    } else if (t >= TIME.enter + TIME.pass + 0.5) {
+      // Red de seguridad: si el avión no llegó a dispararlo (pestaña dormida,
+      // un dt raro), la frase sale igual y con los retardos de siempre.
+      startReveal(null);
+    }
   }
   // Desprender la maquetación antes del barrido: medir en caliente costaría un salto.
-  if (revealed && !loosened && t >= TIME.attack - 0.6) {
+  if (revealed && !loosened && choreo.armed(t)) {
     loosened = true;
     phrase.loosen();
   }
 
   phrase.update(dt, choreo.sweeping ? choreo.screen : null);
 
-  if (!scattered && choreo.state === "dive") {
+  if (!scattered && choreo.state === "charge") {
     scattered = true;
-    phrase.scatterRest();
+    phrase.scatterRest(choreo.sweepDir);
   }
 }
 
@@ -151,15 +170,6 @@ function startIntro3D() {
     ambient: CONFIG.ambientAfterIntro,
     onFlash: () => flashToMenu(220),
   });
-
-  // Con movimiento reducido no hay barrido ni picado: la frase se lee y se va.
-  if (reduced) {
-    const wait = (TIME.reveal + phrase.revealDuration + 3) * 1000;
-    setTimeout(() => {
-      phrase.fadeOut();
-      setTimeout(() => flashToMenu(400), 520);
-    }, wait);
-  }
 
   // ?seek=8.4 adelanta la coreografía a pasos fijos antes de arrancar el rAF.
   // Sirve para revisar un instante concreto sin esperarlo en tiempo real.
@@ -258,9 +268,6 @@ field.addEventListener("animationend", () => field.classList.remove("is-nudge"))
 /* --------------------------------------------------------------------- boot */
 
 function boot() {
-  // El barrido llega cuando la frase ya se ha podido leer, no en un segundo fijo.
-  TIME.attack = TIME.reveal + phrase.revealDuration + CONFIG.holdAfterReveal;
-
   if (skipRequested) {
     showMenu();
     return;
