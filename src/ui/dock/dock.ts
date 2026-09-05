@@ -1,11 +1,16 @@
 import { el } from "../dom.ts";
 import { onMenuVisible } from "../afterIntro.ts";
-import { mountProjectsTab } from "./projectsTab.ts";
-import { mountNotionTab } from "./notionTab.ts";
-import { mountAiTab } from "./aiTab.ts";
+import { mountWorkspace } from "./workspace.ts";
 
 /**
- * La franja de abajo: Proyectos · Notion · IA.
+ * La franja de abajo: el espacio de trabajo.
+ *
+ * Tenía tres pestañas —Proyectos · Notion · IA— y ya no tiene ninguna. La de IA
+ * se fue a la ventana del asistente, que es donde se usa lo que configura; la de
+ * Notion se disolvió dentro de Proyectos, porque conectar es el primer paso de
+ * esa pantalla y no un sitio aparte. Lo que queda es una cosa sola, y una cosa
+ * sola no necesita pestañas: la fila de arriba dice dónde estás dentro de las
+ * carpetas y el cuerpo muestra su contenido.
  *
  * Vive fuera de `.stage` a propósito. Dentro heredaría el apilamiento del lienzo
  * y no podría quedar por encima; fuera puede además desplazar sólo la capa del
@@ -17,25 +22,10 @@ import { mountAiTab } from "./aiTab.ts";
  */
 
 const OPEN_KEY = "3i.dock.open";
-const TAB_KEY = "3i.dock.tab";
-
-export type DockTab = "proyectos" | "notion" | "ia";
-
-interface TabSpec {
-  id: DockTab;
-  label: string;
-  mount: (container: HTMLElement) => void;
-}
-
-const TABS: readonly TabSpec[] = [
-  { id: "proyectos", label: "Proyectos", mount: mountProjectsTab },
-  { id: "notion", label: "Notion", mount: mountNotionTab },
-  { id: "ia", label: "IA", mount: mountAiTab },
-];
 
 export interface Dock {
   reveal(): void;
-  open(tab?: DockTab): void;
+  open(): void;
   close(): void;
 }
 
@@ -54,81 +44,23 @@ export function mountDock(): Dock {
     attrs: { type: "button", "aria-expanded": "false", "aria-controls": "dock-body" },
   }, [el("span", { text: "Espacio de trabajo" }), chev]);
 
-  const tablist = el("div", {
-    class: "dock__tabs",
-    attrs: { role: "tablist", "aria-label": "Espacio de trabajo" },
-  });
-  const panes = el("div", { class: "dock__panes" });
-
-  const buttons = new Map<DockTab, HTMLButtonElement>();
-  const sections = new Map<DockTab, HTMLElement>();
-
-  for (const tab of TABS) {
-    const button = el("button", {
-      class: "dock__tab",
-      text: tab.label,
-      attrs: {
-        type: "button", role: "tab", id: `dock-tab-${tab.id}`,
-        "aria-controls": `dock-pane-${tab.id}`, "aria-selected": "false", tabindex: -1,
-      },
-      on: { click: () => { select(tab.id); } },
-    });
-    const section = el("section", {
-      class: "dock__pane",
-      attrs: {
-        role: "tabpanel", id: `dock-pane-${tab.id}`,
-        "aria-labelledby": `dock-tab-${tab.id}`, tabindex: -1, hidden: true,
-      },
-    });
-    buttons.set(tab.id, button);
-    sections.set(tab.id, section);
-    tablist.append(button);
-    panes.append(section);
-    tab.mount(section);
-  }
+  /**
+   * La fila de arriba se queda fija y sólo el cuerpo se desplaza: al bajar por
+   * una carpeta larga, el camino de vuelta tiene que seguir a la vista. Está
+   * vacía mientras no haya carpetas que recorrer, y vacía no ocupa (`:empty`).
+   */
+  const head = el("div", { class: "dock__head" });
+  const pane = el("div", { class: "dock__pane" });
 
   const body = el("div", { class: "dock__body", attrs: { id: "dock-body", inert: true } },
-    [tablist, panes]);
+    [head, pane]);
 
   const dock = el("aside", {
     class: "dock",
     attrs: { id: "dock", "data-open": "false", hidden: true },
   }, [handle, body]);
 
-  /* --- pestañas ---------------------------------------------------------- */
-
-  let active: DockTab = (recall(TAB_KEY) as DockTab | null) ?? "proyectos";
-  if (!buttons.has(active)) active = "proyectos";
-
-  function select(id: DockTab, focus = false): void {
-    active = id;
-    remember(TAB_KEY, id);
-    for (const tab of TABS) {
-      const isActive = tab.id === id;
-      const button = buttons.get(tab.id) as HTMLButtonElement;
-      const section = sections.get(tab.id) as HTMLElement;
-      button.setAttribute("aria-selected", String(isActive));
-      // Un solo punto de entrada con el tabulador; dentro se navega con flechas.
-      button.tabIndex = isActive ? 0 : -1;
-      section.hidden = !isActive;
-    }
-    if (focus) buttons.get(id)?.focus();
-  }
-
-  tablist.addEventListener("keydown", (event) => {
-    const order = TABS.map((tab) => tab.id);
-    const index = order.indexOf(active);
-    let next: DockTab | undefined;
-
-    if (event.key === "ArrowRight") next = order[(index + 1) % order.length];
-    else if (event.key === "ArrowLeft") next = order[(index - 1 + order.length) % order.length];
-    else if (event.key === "Home") next = order[0];
-    else if (event.key === "End") next = order[order.length - 1];
-    else return;
-
-    event.preventDefault();
-    if (next) select(next, true);
-  });
+  mountWorkspace({ head, pane });
 
   /* --- abrir y cerrar ---------------------------------------------------- */
 
@@ -189,7 +121,6 @@ export function mountDock(): Dock {
     if (startOpen) setTimeout(() => { setOpen(true); }, still || !animate ? 0 : 760);
   }
 
-  select(active);
   document.body.append(dock);
   document.body.dataset.dock = "closed";
 
@@ -201,10 +132,9 @@ export function mountDock(): Dock {
   return {
     reveal: () => { reveal(); },
 
-    open(tab) {
+    open() {
       const fresh = !revealed;
       reveal(!fresh);
-      if (tab) select(tab);
 
       if (!fresh) {
         setOpen(true);

@@ -3,8 +3,10 @@ import { makeMovable, type Movable } from "../drag.ts";
 import { origamiSvg } from "../origami.ts";
 import { onMenuVisible } from "../afterIntro.ts";
 import {
-  activeProvider, aiConfig, chosenModel, hasCredential, providerLabel, serverKeys,
+  activeProvider, aiConfig, chosenModel, hasCredential, probeServerKeys,
+  providerLabel, serverKeys,
 } from "../../core/ai/config.ts";
+import { mountAiSettings } from "./settings.ts";
 import { ask, conversation, isAsking, resetConversation, stopAsking } from "../../core/ai/conversation.ts";
 import { intent } from "../../core/state/intent.ts";
 import { selection } from "../../core/state/selection.ts";
@@ -23,6 +25,10 @@ import { selection } from "../../core/state/selection.ts";
  * respeta al recargar. Es la instrucción explícita —«así lo podré mover o
  * posicionar donde desee»— y también lo que hace que el asistente pueda mirar
  * el documento sin taparlo.
+ *
+ * Los ajustes —proveedor, credencial y modelo— están aquí dentro y no en la
+ * franja de abajo: elegir el modelo es parte de preguntar, y separarlo obligaba a
+ * cruzar la pantalla para volver al mismo sitio. `settings.ts` los construye.
  *
  * Lo que ve, lo ve `conversation.ts`; aquí sólo se dice.
  */
@@ -46,6 +52,10 @@ let field: HTMLTextAreaElement | null = null;
 let sendBtn: HTMLButtonElement | null = null;
 let ctxLine: HTMLElement | null = null;
 let footLine: HTMLElement | null = null;
+let askForm: HTMLElement | null = null;
+let setup: HTMLElement | null = null;
+let setupBtn: HTMLButtonElement | null = null;
+let setupReady = false;
 let panelMove: Movable | null = null;
 let handleMove: Movable | null = null;
 
@@ -104,16 +114,10 @@ function paintFoot(): void {
     render(footLine,
       `${label}: falta la credencial. `,
       el("button", {
-        class: "ai-link",
-        text: "Configúrala en IA",
+        class: "lnkbtn",
+        text: "Configúrala aquí",
         attrs: { type: "button" },
-        on: {
-          click: () => {
-            // La franja de abajo se abre por evento: el asistente no tiene por
-            // qué conocerla, y así no se importan en círculo.
-            document.dispatchEvent(new CustomEvent("dock:open", { detail: "ia" }));
-          },
-        },
+        on: { click: () => { showSetup(true); } },
       }),
     );
     return;
@@ -191,6 +195,37 @@ async function submit(text: string): Promise<void> {
   }
 }
 
+/* --- ajustes --------------------------------------------------------------- */
+
+/**
+ * Los ajustes ocupan el sitio de la conversación en vez de abrirse aparte: la
+ * ventana es pequeña y dos paneles a la vez no caben. El registro no se borra,
+ * sólo se tapa, así que al volver sigue la conversación donde estaba.
+ *
+ * Se construyen la primera vez que se piden. Montarlos al arrancar costaría la
+ * lectura del catálogo de modelos a quien todavía no ha preguntado nada.
+ */
+function showSetup(on: boolean): void {
+  ensure();
+  if (!setup || !log || !askForm) return;
+
+  if (on && !setupReady) {
+    setupReady = true;
+    mountAiSettings(setup);
+  }
+
+  setup.hidden = !on;
+  log.hidden = on;
+  askForm.hidden = on;
+  setupBtn?.setAttribute("aria-pressed", String(on));
+  if (on) setup.scrollTop = 0;
+  else field?.focus();
+}
+
+function toggleSetup(): void {
+  showSetup(Boolean(setup?.hidden));
+}
+
 /* --- construcción --------------------------------------------------------- */
 
 let panelGrip: HTMLElement | null = null;
@@ -222,11 +257,20 @@ function buildPanel(): HTMLElement {
   }, [
     el("span", { class: "ai-pop__title", text: "Asistente" }),
     ctxLine,
+    setupBtn = el("button", {
+      class: "ai-pop__act",
+      text: "Ajustes",
+      attrs: { type: "button", "aria-pressed": "false", title: "Proveedor, credencial y modelo" },
+      on: { click: () => { toggleSetup(); } },
+    }),
     el("button", {
       class: "ai-pop__act",
       text: "Nueva",
       attrs: { type: "button", title: "Empezar otra conversación" },
-      on: { click: () => { resetConversation(); paintLog(); busy(false); field?.focus(); } },
+      on: { click: () => {
+        showSetup(false);
+        resetConversation(); paintLog(); busy(false); field?.focus();
+      } },
     }),
     el("button", {
       class: "ai-pop__act ai-pop__x",
@@ -272,6 +316,12 @@ function buildPanel(): HTMLElement {
       },
     },
   }, [area, sendBtn]);
+  askForm = form;
+
+  setup = el("div", {
+    class: "ai-pop__setup",
+    attrs: { hidden: true, "aria-label": "Ajustes del asistente" },
+  });
 
   footLine = el("p", { class: "ai-pop__foot" });
 
@@ -282,11 +332,14 @@ function buildPanel(): HTMLElement {
       keydown: (event) => {
         if (event.key !== "Escape") return;
         event.stopPropagation();
+        // Con los ajustes abiertos, el Escape vuelve a la conversación: cerrar
+        // la ventana entera dejaría a medias lo que se estaba configurando.
+        if (setup && !setup.hidden) { showSetup(false); return; }
         close();
         handle?.focus();
       },
     },
-  }, [grip, log, form, footLine]);
+  }, [grip, log, form, setup, footLine]);
 
   return box;
 }
@@ -318,6 +371,11 @@ function ensure(): void {
   paintContext();
   paintFoot();
 
+  // El pie dice si falta la credencial, y la del servidor sólo la conoce
+  // `/api/health`. Se pregunta al montar y no al abrir los ajustes: sin esto la
+  // ventana anunciaría que falta una clave que sí está puesta.
+  void probeServerKeys();
+
   intent.subscribe(paintContext);
   selection.subscribe(paintContext);
   aiConfig.subscribe(paintFoot);
@@ -348,15 +406,6 @@ function close(): void {
 function toggle(): void {
   if (panel && !panel.hidden) close();
   else open();
-}
-
-/** Desde la pestaña IA de la franja de abajo. */
-export function openAssistant(): void {
-  open();
-}
-
-export function closeAssistant(): void {
-  close();
 }
 
 /**

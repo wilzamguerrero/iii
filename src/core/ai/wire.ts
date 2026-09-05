@@ -84,8 +84,10 @@ export async function apiError(response: Response): Promise<ApiError> {
       if (typeof nested.code === "string") code = nested.code;
     }
   } catch {
-    // No era JSON: se usa el texto crudo, recortado.
-    message = text.slice(0, 300);
+    // No era JSON. El servidor ya resume las páginas de error del proveedor
+    // (`explainBody` en api/_ai.ts), así que llegar aquí con etiquetas es raro;
+    // por si acaso, se quitan: una página entera no explica nada en una línea.
+    message = text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300);
   }
 
   if (!message) message = `El servidor respondió ${response.status}.`;

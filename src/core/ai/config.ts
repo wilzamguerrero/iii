@@ -261,7 +261,7 @@ export async function probeServerKeys(): Promise<void> {
     const policy = data.config?.aiCustom;
     if (policy === "off" || policy === "public" || policy === "local") customPolicy.set(policy);
   } catch {
-    // Sin health no se puede afirmar nada; la pestaña pedirá la clave.
+    // Sin health no se puede afirmar nada; los ajustes pedirán la clave.
   }
 }
 

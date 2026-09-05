@@ -13,7 +13,7 @@
 
 import type { ApiHandler } from "./_types.ts";
 import {
-  describe, fetchWithFallback, noStore, pipeStream, readTarget, resolveKey,
+  describe, explainBody, fetchWithFallback, noStore, pipeStream, readTarget, resolveKey,
 } from "./_ai.ts";
 
 /** Topes de cordura. No son de seguridad de la clave, son de no mandar un libro. */
@@ -85,7 +85,7 @@ const handler: ApiHandler = async (req, res) => {
   if (!key && !target.custom) {
     res.status(401).json({
       error: "missing_key",
-      message: `Falta la credencial de ${target.label}. Configúrala en la pestaña IA.`,
+      message: `Falta la credencial de ${target.label}. Configúrala en los ajustes del asistente.`,
     });
     return;
   }
@@ -96,7 +96,7 @@ const handler: ApiHandler = async (req, res) => {
   if (!model) {
     res.status(400).json({
       error: "missing_model",
-      message: "Elige un modelo en la pestaña IA: este proveedor no tiene uno por defecto.",
+      message: "Elige un modelo en los ajustes del asistente: este proveedor no tiene uno por defecto.",
     });
     return;
   }
@@ -122,11 +122,23 @@ const handler: ApiHandler = async (req, res) => {
       return;
     }
 
-    // Ni el error ni la respuesta corta se reinterpretan: el cliente ve lo que
-    // dijo el proveedor, que es lo único que explica de verdad un 429 o un 402.
     const data = await upstream.text();
+    const type = upstream.headers.get("content-type");
+
+    // Un fallo en JSON se reenvía tal cual: es lo único que explica de verdad un
+    // 429 o un 402. Uno que no es JSON —una página de error de un cortafuegos,
+    // por ejemplo— se resume, porque si no acabaría entero en la conversación.
+    if (!upstream.ok) {
+      const message = explainBody(upstream.status, target.label, type, data);
+      if (message) {
+        console.error("[ai-chat]", target.id, upstream.status, data.slice(0, 200));
+        res.status(upstream.status).json({ error: "provider_error", message });
+        return;
+      }
+    }
+
     res.status(upstream.status);
-    res.setHeader("Content-Type", upstream.headers.get("content-type") ?? "application/json");
+    res.setHeader("Content-Type", type ?? "application/json");
     res.send(data);
   } catch (error) {
     console.error("[ai-chat]", target.id, describe(error));

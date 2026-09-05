@@ -152,7 +152,7 @@ Dos vistas, no más.
 
 **A · Inicio.** Lo que ya existe, intacto: intro de origami, frase, y el formulario de
 intención. Debajo, una **franja inferior retráctil** —oculta por defecto, se sube con un
-tirador— con tres pestañas, tal como se pidió:
+tirador— con el espacio de trabajo:
 
 ```
 ┌──────────────────────────────────────────────────────┐
@@ -162,13 +162,24 @@ tirador— con tres pestañas, tal como se pidió:
 │        └────────────────────────────────┘            │
 │                                                      │
 ├──────────────────────────────────────────────────────┤
-│  ▲   Proyectos   ·   Notion   ·   IA                 │  ← franja retráctil
+│  ▲   Espacio de trabajo                              │  ← tirador
+├──────────────────────────────────────────────────────┤
+│  PROYECTOS / TESIS       NUEVA PÁGINA · NUEVA CARPETA│  ← dónde estás
+│  › Indagar                                           │
+│  · Intención declarada                     renombrar │
+│  En Notion de Wilzam, bajo «3i». Cambiar raíz · Desc.│
 └──────────────────────────────────────────────────────┘
 ```
 
-- **Proyectos** — el árbol: proyectos, páginas dentro, última abierta, crear y borrar.
-- **Notion** — conectar / desconectar, página raíz elegida, estado de sincronía.
-- **IA** — proveedor, clave o cuenta, modelo, y la puerta al asistente.
+Empezó con tres pestañas —Proyectos · Notion · IA— y se quedó en una sola pantalla
+(2026-09-05; §12 D6). **Conectar Notion es el primer paso de esta pantalla**, no un lugar
+aparte: sin conexión no hay proyectos que enseñar, y con conexión aquella pestaña no tenía
+nada más que decir que el nombre del espacio y la página raíz, que ahora son una línea al
+final de la lista. **Los ajustes de IA viven en la ventana del asistente**, que es donde se
+nota lo que configuran. Y **el árbol se recorre en horizontal**: la fila de arriba dice
+dónde estás —con la misma gramática que tenían las pestañas: mayúsculas pequeñas y una
+línea bajo el sitio actual— y debajo va sólo el contenido de esa carpeta. Se entra en una
+carpeta pulsándola y se vuelve pulsando una miga.
 
 El asistente no espera al espacio de trabajo: en cuanto la intro termina aparece su
 tirador, con la forma del papel de enviar la intención, y se puede arrastrar a donde se
@@ -333,7 +344,8 @@ resuelve `three` al archivo vendorizado y mantener dos mecanismos era engañoso.
   no cambió, pero eso no lo demuestra una terminal.
 
 ### Fase 1 · Franja inferior + conexión Notion
-Franja retráctil con las tres pestañas. Flujo OAuth completo: `getOAuthUrl` con `state`
+Franja retráctil —con tres pestañas entonces; hoy una sola pantalla, §12 D6—. Flujo
+OAuth completo: `getOAuthUrl` con `state`
 CSRF, `api/notion-oauth.ts`, validación del `state`, limpieza de `code`/`state` de la URL
 con `history.replaceState`, `api/notion.ts` como proxy. Selector de página raíz vía
 `POST /v1/search`. Conectar, ver el espacio, desconectar.
@@ -362,15 +374,16 @@ Puerto de `extractFileTree` y del CRUD: crear proyecto (toggle), crear página (
 `caption`), renombrar, borrar. Renderizado propio del árbol, blanco y plano. Estado de
 sesión: última página abierta.
 
-Dos cosas se decidieron al escribirla. **Los hijos se piden al desplegar**, no al abrir la
-pestaña: con veinte proyectos serían veinte peticiones para pintar una lista que igual
+Dos cosas se decidieron al escribirla. **Los hijos se piden al entrar** en la carpeta, no
+de golpe: con veinte proyectos serían veinte peticiones para pintar una lista que igual
 nadie toca, y el límite de Notion son unas tres por segundo. Y **el árbol sólo muestra lo
 que la plataforma crea** —desplegables con páginas de código markdown dentro—; lo demás
 que haya bajo la página raíz se deja en paz, porque esto no es un visor de Notion sino la
 estructura de la plataforma.
 
-Mover y anidar quedan para cuando haya más de un nivel real de proyectos; hoy la jerarquía
-es proyecto → página y arrastrar no tendría a dónde llevar nada.
+Mover quedaría para cuando arrastrar tenga a dónde llevar algo. Anidar sí llegó: una
+carpeta puede contener otra, y por eso el árbol se recorre entrando en vez de desplegando
+(§12 D6).
 *Verificación:* crear un proyecto con tres páginas desde la app y verlas en Notion con la
 jerarquía correcta; renombrar y borrar se reflejan en ambos lados; recargar restaura el
 árbol y la última página. *Comprobado desde la terminal:* la ruta
@@ -400,7 +413,8 @@ navegador sin soporte y confirmar que la UI no se rompe.
 ### Fase 5 · Asistente de IA flotante — **escrita, adelantada**
 Se adelantó a las Fases 3 y 4 porque el asistente es lo que hace que la plataforma
 pregunte, y preguntar no necesita editor: con la intención y una página leída de Notion ya
-tiene de qué. Capa multi-proveedor (D3) + pestaña de configuración: elegir proveedor,
+tiene de qué. Capa multi-proveedor (D3) + ajustes en la propia ventana del asistente
+—botón «Ajustes», junto a «Nueva»—: elegir proveedor,
 guardar o quitar la clave, conectar la cuenta de GitHub por alta de dispositivo y elegir
 modelo del catálogo real del proveedor, con una hora de caché y un botón para releerlo.
 Streaming SSE con cancelación.
@@ -508,7 +522,7 @@ Lo que ya existe va sin marca; lo que todavía es destino de una fase lleva **(F
 │   ├── ai-models.ts            · catálogo de modelos del proveedor
 │   └── github-device.ts        · alta por dispositivo; `client_id` fijo aquí
 ├── src/
-│   ├── app.ts                  · entrada; atiende `intent:submit` y `dock:open`
+│   ├── app.ts                  · entrada; atiende `intent:submit` y el retorno de OAuth
 │   ├── main.js                 · intro Three.js — SIN CAMBIOS
 │   ├── core/
 │   │   ├── store.ts            · estado con subscribe
@@ -532,7 +546,7 @@ Lo que ya existe va sin marca; lo que todavía es destino de una fase lleva **(F
 │   │   ├── origami.ts          · la figura de papel, una sola fuente
 │   │   ├── afterIntro.ts       · la señal de «la intro ya terminó»
 │   │   ├── drag.ts             · ponlo donde quieras, y que ahí se quede
-│   │   ├── dock/               · la franja: proyectos · notion · ia
+│   │   ├── dock/               · la franja: dock · workspace · folders
 │   │   ├── assistant/          · el tirador de papel y su ventana de chat
 │   │   ├── editor/             · contenedor del editor (Fase 3)
 │   │   └── fase/               · panel de estado 3i (Fase 6)
@@ -540,7 +554,7 @@ Lo que ya existe va sin marca; lo que todavía es destino de una fase lleva **(F
 │       ├── app.css             · único punto de entrada de la cascada
 │       ├── tokens.css          · los tokens originales, sin un valor cambiado
 │       ├── intro.css           · el resto del CSS de la intro, intacto
-│       ├── dock.css            · la franja, el árbol y los primitivos del panel
+│       ├── dock.css            · la franja, las carpetas y los primitivos del panel
 │       └── assistant.css       · el tirador y la ventana flotante
 ├── docs/                       · Documento Maestro 3i, estructura CESMAG
 ├── reference/                  · sólo consulta; ni se compila ni se vigila
@@ -618,7 +632,7 @@ Ninguno queda bloqueado por las decisiones de este plan.
    para que ese camino no pueda usarse contra otra aplicación.
 
    **Ampliación (2026-09-05): proveedores propios y catálogo sin lista.** La persona puede
-   añadir cualquier API con el formato de OpenAI («＋ Otro» en la pestaña IA). Los tres de
+   añadir cualquier API con el formato de OpenAI («＋ Otro» en los ajustes del asistente). Los tres de
    casa siguen ignorando la URL que venga del navegador —su dirección está en la tabla—;
    sólo el destino `custom` la acepta, y pasa por un filtro en el servidor: `https`, sin
    credenciales embebidas, sin parámetros, sin redes internas ni direcciones de metadatos,
@@ -635,37 +649,63 @@ Ninguno queda bloqueado por las decisiones de este plan.
    del Documento Maestro. Conviene revisarla con Edison antes de la Fase 7, porque de ella
    depende la coherencia que se quiere como diferencia.
 
+6. ~~**D6 — Una sola pantalla en la franja, y las carpetas en horizontal.**~~ **Aplicada el
+   2026-09-05.** Las tres pestañas se pidieron al principio y se quitaron al usarlas. La de
+   IA se fue a la ventana del asistente: configurar el modelo y hablar con él son el mismo
+   acto, y tenerlos en dos sitios obligaba a cerrar uno para arreglar el otro. La de Notion
+   se disolvió dentro de Proyectos: conectar es el estado inicial de esa pantalla, y una vez
+   conectada sólo quedaba el nombre del espacio y la raíz, que caben en una línea al final
+   de la lista. Con una sola pantalla, las pestañas no tenían nada que separar.
+
+   El árbol pasó a recorrerse **entrando** en vez de desplegando. En una franja de 340 px de
+   alto, dos niveles abiertos dejaban la lista sin sitio, y la sangría contaba la jerarquía
+   dos veces —una con la línea, otra con el margen—. Ahora la fila de arriba dice dónde
+   estás y debajo va sólo el contenido de esa carpeta; la fila hereda la gramática de las
+   pestañas que sustituye, porque es el mismo gesto —decir qué se mira— y no había razón
+   para inventarle otra forma. Lo que esto habilita, y el árbol no: carpetas dentro de
+   carpetas, sin que la pantalla se estreche a cada nivel.
+
 ---
 
 ## 13. Estado y siguiente paso
 
-**Fases 0, 1, 2 y 5 escritas** (2026-09-05). La intro sigue byte a byte como estaba.
+**Fases 0, 1, 2 y 5 escritas** (2026-09-05). La intro sigue byte a byte como estaba. La
+franja se reordenó ese mismo día al usarla: una sola pantalla en vez de tres pestañas, los
+ajustes de IA dentro de la ventana del asistente y las carpetas recorridas en horizontal
+(§12 D6).
 
 Lo que hay en pie:
 
-- **La franja** con sus tres pestañas, que se revela cuando la intro termina —una sola
-  regla para todo lo que aparece después (`ui/afterIntro.ts`), no un observador por pieza.
+- **La franja**, que se revela cuando la intro termina —una sola regla para todo lo que
+  aparece después (`ui/afterIntro.ts`), no un observador por pieza—. Dentro, una sola
+  pantalla: el espacio de trabajo.
 - **Notion**: intercambio OAuth del lado del servidor, `state` CSRF, limpieza de la URL,
-  proxy con lista blanca y selector de página raíz.
-- **Proyectos**: el árbol bajo esa raíz. Crear proyecto y página, renombrar, borrar con
-  confirmación en el propio botón, abrir una página —que es lo que el asistente pasa a ver.
+  proxy con lista blanca y elección de página raíz. Conectar es el estado inicial de esa
+  pantalla, y cuando ya está conectada queda como una línea al final de la lista: de qué
+  espacio es, cambiar raíz, desconectar.
+- **Proyectos**: las carpetas bajo esa raíz, recorridas en horizontal —migas arriba,
+  contenido debajo, se entra y se vuelve—. Crear carpeta y página, renombrar, borrar con
+  confirmación en el propio botón, abrir un documento —que es lo que el asistente pasa a
+  ver—.
 - **IA**: tres proveedores de casa más los que la persona añada («＋ Otro»: cualquier API
   con el formato de OpenAI, con la URL filtrada en el servidor), clave por navegador o por
   entorno, alta por dispositivo para GitHub, y catálogo pedido al proveedor —completado por
   el registro de models.dev— con caché de una hora. No hay ninguna lista de modelos escrita.
+  Todo eso se configura **dentro de la ventana del asistente**, en «Ajustes».
 - **El asistente**: tirador de papel y ventana, los dos arrastrables y persistentes; el
   hilo de la conversación fuera de la interfaz; el sistema 3i escrito para preguntar.
 
 **Lo que no se puede verificar desde una terminal**, y por tanto queda a ojo en el
 navegador de quien lo usa:
 
-1. **El árbol contra un Notion real.** El token vive en el `localStorage` del navegador que
-   autorizó, así que la vuelta entera —crear un proyecto, tres páginas dentro, verlas en
-   Notion con la jerarquía correcta, renombrar, borrar, recargar— sólo la puede hacer
-   quien conectó. Si la pestaña Proyectos dice que falta la página raíz, el botón que
-   ahora lleva ahí es el camino: sin raíz no hay dónde colgar nada.
+1. **Las carpetas contra un Notion real.** El token vive en el `localStorage` del navegador
+   que autorizó, así que la vuelta entera —crear una carpeta, tres páginas dentro, entrar,
+   volver por las migas, verlas en Notion con la jerarquía correcta, renombrar, borrar,
+   recargar— sólo la puede hacer quien conectó. Sin página raíz elegida la pantalla no
+   ofrece otra cosa: sin raíz no hay dónde colgar nada.
 2. **Una respuesta viva del asistente.** No hay ninguna clave en el entorno de este
-   servidor a propósito. En la pestaña IA: pegar una clave de OpenRouter, o conectar la
+   servidor a propósito. En «Ajustes», dentro de la ventana del asistente: pegar una clave
+   de OpenRouter, o conectar la
    cuenta de GitHub con el código que aparece. Después, abrir una página y preguntarle qué
    le falta: si responde citando lo que hay escrito, el contexto funciona.
 3. **Los cinco actos de la intro**, que el código no demuestra por no haber cambiado.

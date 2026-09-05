@@ -18,7 +18,8 @@
 
 import type { ApiHandler } from "./_types.ts";
 import {
-  describe, fetchWithFallback, noStore, readTarget, resolveKey, type Target,
+  describe, explainBody, fetchWithFallback, noStore, readTarget, resolveKey,
+  type Target,
 } from "./_ai.ts";
 import { registryByApi, registryProvider, type RegistryProvider } from "./_registry.ts";
 
@@ -244,10 +245,15 @@ const handler: ApiHandler = async (req, res) => {
 
     if (models.length === 0) {
       if (!upstream.ok) {
+        const body = await upstream.text().catch(() => "");
+        const type = upstream.headers.get("content-type");
+        // Si el cuerpo no es de la API —una página de error de un cortafuegos—, se
+        // resume en una línea en vez de mandarle 600 caracteres de HTML.
+        const plain = explainBody(upstream.status, target.label, type, body);
         res.status(upstream.status).json({
           error: "provider_error",
-          message: `${target.label} respondió ${upstream.status}.`,
-          detail: await upstream.text().then((text) => text.slice(0, 600)).catch(() => null),
+          message: plain ?? `${target.label} respondió ${upstream.status}.`,
+          ...(plain ? {} : { detail: body.slice(0, 600) }),
         });
         return;
       }

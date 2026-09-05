@@ -67,19 +67,19 @@ igual medio segundo después de la pasada.
 | `index.html`            | estructura, capas (`z-index`) y el SVG del botón             |
 | `src/styles/tokens.css` | color, tipografía, curvas y reset — la única fuente          |
 | `src/styles/intro.css`  | cortinas de revelado, menú, grano, *responsive*              |
-| `src/styles/dock.css`   | la franja de abajo, el árbol y los primitivos del panel       |
+| `src/styles/dock.css`   | la franja de abajo, las carpetas y los primitivos del panel   |
 | `src/styles/assistant.css` | el tirador de papel y la ventana flotante del asistente    |
 | `src/app.ts`            | entrada; orden de arranque y cierre del viaje de OAuth        |
 | `src/boot/`             | lo que tiene que pasar antes de la intro (la URL de OAuth)    |
 | `src/core/store.ts`     | estado compartido: `get`, `set`, `subscribe`                  |
-| `src/core/notion/`      | oauth, cliente, tipos y el árbol de proyectos y páginas       |
+| `src/core/notion/`      | oauth, cliente, tipos y las carpetas de proyectos y documentos |
 | `src/core/ai/`          | proveedores (los tres y los propios), claves, modelos, alta por dispositivo, el hilo |
 | `src/core/state/`       | lo que el asistente ve: la intención y la página abierta      |
 | `src/core/persist/`     | la sesión de Notion, guardada entre visitas                   |
 | `src/ui/dom.ts`         | `el()`, `render()`, `debounce` — nunca `innerHTML`            |
 | `src/ui/origami.ts`     | la figura de papel, una sola fuente para los dos botones      |
 | `src/ui/drag.ts`        | arrastrar, recordar dónde se dejó y no salirse de la pantalla |
-| `src/ui/dock/`          | la franja y sus tres pestañas                                |
+| `src/ui/dock/`          | la franja: `dock` (el filo), `workspace` (Notion) y `folders`  |
 | `src/ui/assistant/`     | el tirador y la ventana de conversación                       |
 | `src/main.js`           | ajustes, línea de tiempo, paso a menú, eventos               |
 | `src/scene.js`          | render, cámara, luces de estudio, niebla blanca              |
@@ -109,13 +109,20 @@ Dos decisiones que no se ven en el código y conviene no deshacer sin querer:
 
 ## La franja de abajo
 
-Cuando termina la intro aparece un filo en el borde inferior. Se abre y trae tres
-pestañas: **Proyectos**, **Notion** e **IA**. Es lo que se construye encima; la
-pantalla de inicio sigue siendo una pregunta y nada más.
+Cuando termina la intro aparece un filo en el borde inferior. Se abre y trae el
+**espacio de trabajo**: los proyectos, y la conexión con Notion mientras no la haya.
+Es lo que se construye encima; la pantalla de inicio sigue siendo una pregunta y nada
+más.
+
+Empezó con tres pestañas —Proyectos, Notion e IA— y se quedó en una sola pantalla.
+Los ajustes de IA se fueron a la ventana del asistente, que es donde se nota lo que
+configuran, y Notion se disolvió dentro de Proyectos: conectar es el primer paso de
+esa pantalla, y una vez conectada queda como una línea al final de la lista —de qué
+espacio es, cambiar raíz, desconectar—.
 
 Abierta empuja el formulario hacia arriba en vez de taparlo, y sólo mueve la capa
 del menú: mover `.stage` arrastraría el lienzo y con él el punto de vista de la
-escena. Recuerda si quedó abierta y en qué pestaña. Se cierra con `Esc`.
+escena. Recuerda si quedó abierta. Se cierra con `Esc`.
 
 La conexión con Notion pide un `.env` con las credenciales de una integración
 pública (ver `.env.example`). El `client_secret` vive sólo en `api/`: el navegador
@@ -126,17 +133,23 @@ otra vez— y el `code` se borra de la barra de direcciones en el mismo turno en
 se lee. De eso se ocupa `src/boot/oauth-callback.ts`, que se importa antes que
 `main.js` porque `main.js` lee `?intro=0` al evaluarse.
 
-Cada **proyecto** es una lista desplegable de Notion y cada **página** un bloque de
+Cada **carpeta** es una lista desplegable de Notion y cada **documento** un bloque de
 código en markdown dentro, con el nombre en el pie del bloque. Así el documento se
-lee y se guarda de una vez, sin rearmar un árbol de bloques en cada guardado. Los
-hijos de un proyecto se piden al desplegarlo, no al abrir la pestaña: Notion admite
+lee y se guarda de una vez, sin rearmar un árbol de bloques en cada guardado.
+
+Las carpetas **se recorren en horizontal**: la fila de arriba dice dónde estás
+—`PROYECTOS / TESIS DE GRADO`— y debajo va sólo el contenido de esa carpeta. Se entra
+pulsando la carpeta y se vuelve pulsando una miga del camino; crear ocurre donde estás,
+así que los botones de crear viven en esa misma fila y cambian con ella. Una carpeta
+puede contener otras. El contenido se pide **al entrar**, no de golpe: Notion admite
 unas tres peticiones por segundo y no vale gastarlas en listas que nadie va a mirar.
 
-La pestaña **IA** no guarda ninguna clave en el servidor. Se elige proveedor
-—OpenRouter, NVIDIA o GitHub—, se pega la clave (o se conecta la cuenta de GitHub
-escribiendo un código corto en `github.com/login/device`, como en las herramientas de
-consola) y se elige modelo del catálogo real, que se guarda una hora. Si el servidor
-tiene su propia clave en el entorno, la pestaña lo dice y no hace falta pegar nada.
+Los **ajustes de IA** están en la ventana del asistente, en «Ajustes», y no guardan
+ninguna clave en el servidor. Se elige proveedor —OpenRouter, NVIDIA o GitHub—, se pega
+la clave (o se conecta la cuenta de GitHub escribiendo un código corto en
+`github.com/login/device`, como en las herramientas de consola) y se elige modelo del
+catálogo real, que se guarda una hora. Si el servidor tiene su propia clave en el
+entorno, lo dice y no hace falta pegar nada.
 
 Detrás de los tres, **«＋ Otro» añade cualquier API que hable el formato de OpenAI**:
 un nombre, la URL base y su clave si la pide. El nombre se autocompleta con el
@@ -150,7 +163,7 @@ Studio; `AI_CUSTOM_PROVIDERS` decide hasta dónde llega en un despliegue.
 proveedor —`/models` de OpenRouter, de NVIDIA o de Copilot— y el registro público de
 models.dev sólo completa lo que la respuesta no traiga: nombre legible, contexto, si
 razona y si es gratis. Cuando una API no tiene `/models` —o lo tiene detrás de una
-clave— la lista sale del registro y la pestaña lo dice en vez de fingir que la dio el
+clave— la lista sale del registro y se dice ahí mismo, en vez de fingir que la dio el
 proveedor. `gratis` sólo se marca donde el proveedor publica precios: NVIDIA declara
 todo a coste cero y eso no significa nada.
 

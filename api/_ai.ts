@@ -312,7 +312,8 @@ export function readTarget(req: ApiRequest, provider: unknown): TargetResult {
 /**
  * La clave que se usará: la que manda el navegador o, si no la manda, la que
  * haya en el entorno del servidor. Las dos vías existen a propósito —la persona
- * pega su clave en la pestaña IA, y quien despliega puede poner una para todos—
+ * pega su clave en los ajustes del asistente, y quien despliega puede poner una para
+ * todos—
  * y el navegador nunca ve la del entorno. Un proveedor propio no tiene variable
  * de entorno: su clave viene siempre del navegador.
  */
@@ -413,4 +414,42 @@ export function describe(error: unknown): string {
     return "No se pudo conectar con esa dirección. Comprueba la URL y que el servidor esté encendido.";
   }
   return error.message;
+}
+
+/**
+ * Qué decirle a la persona cuando el proveedor contesta con un fallo que no es
+ * JSON.
+ *
+ * Pasó de verdad: una pasarela detrás de Cloudflare respondía 403 con 4,5 KB de
+ * HTML al `POST` del chat —el `GET` de los modelos sí pasaba—, y esa página
+ * entera aparecía como respuesta del asistente. Un cortafuegos delante del
+ * proveedor no se arregla desde aquí, pero sí se puede decir en una línea en vez
+ * de en una página.
+ *
+ * Devuelve `null` si el cuerpo es JSON: eso se reenvía tal cual, porque un 429 o
+ * un 402 sólo los explica bien el proveedor.
+ */
+export function explainBody(
+  status: number,
+  label: string,
+  contentType: string | null,
+  text: string,
+): string | null {
+  if ((contentType ?? "").includes("json")) return null;
+  try {
+    JSON.parse(text);
+    return null;
+  } catch { /* no era JSON aunque no lo dijera */ }
+
+  const blocked = /Attention Required|cf-error|Cloudflare Ray ID|have been blocked/i.test(text);
+  if (blocked) {
+    return `${label} devolvió ${status}: su cortafuegos (Cloudflare) bloqueó la petición. ` +
+      "No es la clave ni el modelo; esa dirección no admite peticiones desde este servidor.";
+  }
+
+  // Sin marcas reconocibles: se dice el estado y, si el cuerpo era texto corto y
+  // legible, se cita. Una página de HTML no se cita: no explica nada.
+  const plain = text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  const quoted = plain && plain.length <= 200 && !/^</.test(text.trim()) ? ` Dijo: «${plain}»` : "";
+  return `${label} devolvió ${status} y no una respuesta de la API.${quoted}`;
 }

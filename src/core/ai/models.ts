@@ -5,7 +5,7 @@ import type { AiModel, ProviderId } from "./types.ts";
  * El catálogo de modelos del proveedor, con memoria.
  *
  * Se guarda una hora: la lista de OpenRouter son cientos de entradas y no cambia
- * de un minuto a otro, y abrir la pestaña IA no debería costar una petición. El
+ * de un minuto a otro, y abrir los ajustes no debería costar una petición. El
  * botón «Actualizar» fuerza la relectura.
  *
  * La lista la arma `api/ai-models` preguntándole al proveedor y completando lo

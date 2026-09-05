@@ -9,10 +9,14 @@ import { cachedCatalog, forgetCatalog, listModels } from "../../core/ai/models.t
 import { startDeviceFlow, waitForDeviceToken, type DeviceStart } from "../../core/ai/device.ts";
 import { loadDirectory, type DirectoryEntry } from "../../core/ai/registry.ts";
 import { builtinInfo, isBuiltin, isCustom, type AiModel, type ProviderId } from "../../core/ai/types.ts";
-import { openAssistant } from "../assistant/assistant.ts";
 
 /**
- * Pestaña «IA»: qué proveedor, con qué credencial y con qué modelo.
+ * Los ajustes del asistente: qué proveedor, con qué credencial y con qué modelo.
+ *
+ * Viven dentro de la ventana del asistente y no en la franja de abajo, porque
+ * son de la conversación: elegir el modelo es parte de preguntar, y tener que
+ * cerrar el asistente para cambiarlo era pedir un viaje de ida y vuelta a otro
+ * sitio de la pantalla para volver al mismo punto.
  *
  * Los tres primeros son los del proyecto de referencia —OpenRouter, NVIDIA y
  * Copilot por cuenta de GitHub— y el de GitHub usa el alta por dispositivo, que
@@ -32,7 +36,7 @@ const MANY = 40;
 /** Desde cuántos modelos aparece el filtro de texto. */
 const FILTER_FROM = 12;
 
-export function mountAiTab(container: HTMLElement): void {
+export function mountAiSettings(container: HTMLElement): void {
   const status = el("p", { class: "msg" });
   const hint = el("p", { class: "pnl__note" });
   const credBlock = el("div", { class: "pnl__block" });
@@ -179,7 +183,7 @@ export function mountAiTab(container: HTMLElement): void {
 
   /* --- proveedor propio: clave, URL y baja -------------------------------- */
 
-  /** Falso si el proveedor ya no existe: otra pestaña pudo haberlo quitado. */
+  /** Falso si el proveedor ya no existe: otra ventana pudo haberlo quitado. */
   function buildCustomForm(provider: ProviderId): boolean {
     const entry = customProvider(provider);
     if (!entry) { mode = "provider"; setProvider("openrouter"); return false; }
@@ -346,7 +350,7 @@ export function mountAiTab(container: HTMLElement): void {
       }
 
       const registry = chosen?.id;
-      // El alta deja el proveedor activo, lo que repinta esta pestaña: hay que
+      // El alta deja el proveedor activo, lo que repinta este panel: hay que
       // salir del modo «añadir» antes de guardar.
       mode = "provider";
       const id = addCustomProvider({ label, baseUrl: normal, ...(registry ? { registry } : {}) });
@@ -524,7 +528,7 @@ export function mountAiTab(container: HTMLElement): void {
       showCode(start, controller);
       const token = await waitForDeviceToken(start, controller.signal);
       if (controller.signal.aborted) return;
-      // Guardarlo dispara `aiConfig`, que repinta esta pestaña ya conectada.
+      // Guardarlo dispara `aiConfig`, que repinta este panel ya conectado.
       setKey("github", token);
       say("Cuenta de GitHub conectada.");
     } catch (error) {
@@ -770,27 +774,13 @@ export function mountAiTab(container: HTMLElement): void {
   }
 
   render(container, el("div", { class: "pnl" }, [
-    el("p", { class: "pnl__lead" }, [
-      "El asistente ",
-      el("em", { text: "pregunta" }),
-      ". No redacta el proyecto por ti: te devuelve las decisiones que faltan.",
-    ]),
     el("p", { class: "pnl__note", text:
-      "Ve la intención que escribiste y el documento que tengas abierto. " +
-      "Elige con qué proveedor hablar, guarda su credencial y escoge el modelo." }),
+      "Con quién habla el asistente. Elige el proveedor, guarda su credencial y " +
+      "escoge el modelo; se recuerda uno por proveedor." }),
     seg,
     hint,
     credBlock,
     modelBlock,
-    el("hr", { class: "pnl__sep" }),
-    el("div", { class: "pnl__row" }, [
-      el("button", {
-        class: "btn",
-        text: "Abrir asistente",
-        attrs: { type: "button" },
-        on: { click: () => { openAssistant(); } },
-      }),
-    ]),
     status,
   ]));
 

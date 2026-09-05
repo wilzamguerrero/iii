@@ -20,8 +20,8 @@ import "./main.js";
 import { exchangeCode, OAuthError } from "./core/notion/oauth.ts";
 import { openSession } from "./core/persist/session.ts";
 import { mountAssistant } from "./ui/assistant/assistant.ts";
-import { mountDock, type DockTab } from "./ui/dock/dock.ts";
-import { notionExchangeFailed, notionExchangeStarted } from "./ui/dock/notionTab.ts";
+import { mountDock } from "./ui/dock/dock.ts";
+import { notionExchangeFailed, notionExchangeStarted } from "./ui/dock/workspace.ts";
 import { rememberIntent } from "./core/state/intent.ts";
 
 export interface IntentSubmitDetail {
@@ -34,8 +34,6 @@ export interface IntentSubmitDetail {
 declare global {
   interface DocumentEventMap {
     "intent:submit": CustomEvent<IntentSubmitDetail>;
-    /** El asistente pide abrir una pestaña de la franja. Ver más abajo. */
-    "dock:open": CustomEvent<string>;
   }
 }
 
@@ -51,18 +49,6 @@ document.addEventListener("intent:submit", (event) => {
   rememberIntent(event.detail.intent, event.detail.at);
 });
 
-function isDockTab(value: string): value is DockTab {
-  return value === "proyectos" || value === "notion" || value === "ia";
-}
-
-/**
- * El asistente abre los ajustes de IA sin conocer la franja: manda un evento y
- * aquí se traduce. Importarse el uno al otro por un botón no compensa.
- */
-document.addEventListener("dock:open", (event) => {
-  if (isDockTab(event.detail)) dock.open(event.detail);
-});
-
 /**
  * Cierre del viaje de OAuth. La página se ha recargado por completo desde que
  * empezó, así que lo único que queda de aquel gesto es el código en la URL —ya
@@ -75,7 +61,7 @@ async function resolveOAuth(): Promise<void> {
 
     case "denied":
       notionExchangeFailed(oauthCallback.message);
-      dock.open("notion");
+      dock.open();
       return;
 
     case "bad-state":
@@ -86,12 +72,12 @@ async function resolveOAuth(): Promise<void> {
         "La respuesta de Notion no correspondía a esta petición. No se completó " +
         "la conexión; vuelve a intentarlo desde aquí.",
       );
-      dock.open("notion");
+      dock.open();
       return;
 
     case "code":
       notionExchangeStarted();
-      dock.open("notion");
+      dock.open();
       try {
         openSession(await exchangeCode(oauthCallback.code));
       } catch (cause) {

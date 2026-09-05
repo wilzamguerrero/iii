@@ -85,16 +85,52 @@
   border-top: 1px solid var(--ink-line);
 }
 
-.dock__tabs {
-  display: flex;
-  gap: clamp(1.1rem, 3vw, 2rem);
+/* La fila del camino. Se queda fija arriba y sólo el cuerpo se desplaza: al
+   bajar por una carpeta larga, la vuelta tiene que seguir a la vista. Vacía no
+   ocupa, así que fuera de las carpetas la franja es sólo cuerpo. */
+.dock__head {
+  flex: 0 0 auto;
   padding: 0 clamp(1rem, 4vw, 2.25rem);
   border-bottom: 1px solid var(--ink-line);
-  flex: 0 0 auto;
 }
 
-.dock__tab {
+.dock__head:empty { display: none; }
+
+.crumbs {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+/* El camino puede crecer más que la franja: se desplaza en horizontal, sin barra
+   a la vista, en vez de empujar las acciones fuera de cuadro. */
+.crumbs__trail {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.crumbs__trail::-webkit-scrollbar { display: none; }
+
+.crumbs__sep { flex: 0 0 auto; color: var(--ink-faint); font-size: 0.7rem; }
+
+.crumbs__acts { display: flex; flex: 0 0 auto; gap: 0.9rem; }
+
+/* La misma gramática que tenían las pestañas: mayúsculas pequeñas y una línea
+   bajo donde estás. Es el mismo gesto —decir qué se mira— y no había razón para
+   inventarle otra forma. */
+.crumb {
   position: relative;
+  flex: 0 0 auto;
+  max-width: 11rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   border: 0;
   background: transparent;
   padding: 0.85rem 0.1rem;
@@ -108,7 +144,7 @@
   transition: color 0.3s ease;
 }
 
-.dock__tab::after {
+.crumb::after {
   content: "";
   position: absolute;
   left: 0;
@@ -121,20 +157,42 @@
   transition: transform 0.45s var(--out-expo);
 }
 
-.dock__tab:hover { color: var(--ink); }
-.dock__tab[aria-selected="true"] { color: var(--ink); }
-.dock__tab[aria-selected="true"]::after { transform: scaleX(1); }
-.dock__tab:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: 2px; }
+.crumb:hover { color: var(--ink); }
+.crumb:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: 2px; }
 
-.dock__panes {
+.crumb--now { color: var(--ink); cursor: default; }
+.crumb--now::after { transform: scaleX(1); }
+
+/* Crear no es un sitio al que ir: mismo tamaño, más ligero y sin la línea. */
+.crumb__act {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  padding: 0.85rem 0;
+  color: var(--ink-soft);
+  font-family: inherit;
+  font-size: 0.68rem;
+  font-weight: 300;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.crumb__act:hover {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.crumb__act:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: 2px; }
+
+.dock__pane {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: clamp(1rem, 2.6vh, 1.6rem) clamp(1rem, 4vw, 2.25rem) 1.6rem;
 }
-
-.dock__pane[hidden] { display: none; }
 
 /* El formulario está centrado en la pantalla; abierta la franja, se recentra
    sobre el espacio que queda. Sólo se mueve la capa del menú: mover `.stage`
@@ -146,14 +204,16 @@ body[data-dock="open"] .menu {
 
 @media (max-width: 620px) {
   :root { --dock-h: min(330px, 64vh); }
-  .dock__tabs { gap: 1.1rem; }
-  .dock__tab { font-size: 0.68rem; letter-spacing: 0.1em; }
+  .crumbs { gap: 0.6rem; }
+  .crumbs__acts { gap: 0.7rem; }
+  .crumb { font-size: 0.68rem; letter-spacing: 0.1em; max-width: 8.5rem; }
+  .crumb__act { font-size: 0.64rem; letter-spacing: 0.08em; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .dock,
   .dock__chev,
-  .dock__tab::after,
+  .crumb::after,
   body[data-dock="open"] .menu { transition-duration: 0.01ms; }
   .dock.is-in { animation: none; }
 }
@@ -338,17 +398,18 @@ body[data-dock="open"] .menu {
    algo falló. Con esto se lee igual sin distinguir colores. */
 .msg--bad { color: #a3341f; }
 
-/* --- árbol de proyectos (Fase 2) ---------------------------------------- */
+/* --- carpetas y documentos (Fase 2) ------------------------------------- */
 
-/* Un proyecto es una fila que se despliega; una página, una fila que se abre.
-   Nada de iconos: una punta de flecha para lo que contiene y un punto para lo
-   que se lee. Las acciones sólo aparecen cuando el puntero o el foco están en
-   la fila, para que la lista se lea como una lista y no como un panel. */
+/* Una carpeta es una fila en la que se entra; un documento, una fila que se
+   abre. Nada de iconos: una punta hacia la derecha para lo que contiene y un
+   punto para lo que se lee. Las acciones sólo aparecen cuando el puntero o el
+   foco están en la fila, para que la lista se lea como una lista y no como un
+   panel. */
 
-.tree { list-style: none; margin: 0.35rem 0 0; padding: 0; }
-.tree__item { list-style: none; }
+.fold { list-style: none; margin: 0.35rem 0 0; padding: 0; }
+.fold__item { list-style: none; }
 
-.tree__row {
+.fold__row {
   display: flex;
   align-items: center;
   gap: 0.3rem;
@@ -357,10 +418,10 @@ body[data-dock="open"] .menu {
   border-radius: 2px;
 }
 
-.tree__row:hover { background: rgba(20, 23, 28, 0.028); }
+.fold__row:hover { background: rgba(20, 23, 28, 0.028); }
 
-.tree__twist,
-.tree__open {
+.fold__into,
+.fold__open {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -376,22 +437,27 @@ body[data-dock="open"] .menu {
   cursor: pointer;
 }
 
-.tree__twist:focus-visible,
-.tree__open:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: -1px; }
+.fold__into:focus-visible,
+.fold__open:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: -1px; }
 
-.tree__caret {
+/* La punta hacia la derecha dice que ahí se entra; al pasar por encima se
+   adelanta un pelo, que es el movimiento que va a ocurrir. */
+.fold__mark {
   flex: 0 0 auto;
   width: 5px;
   height: 5px;
   border-right: 1px solid var(--ink-soft);
   border-bottom: 1px solid var(--ink-soft);
   transform: rotate(-45deg);
-  transition: transform 0.28s var(--out-quart);
+  transition: transform 0.28s var(--out-quart), border-color 0.28s ease;
 }
 
-.tree__twist[aria-expanded="true"] .tree__caret { transform: rotate(45deg); }
+.fold__into:hover .fold__mark {
+  border-color: var(--ink);
+  transform: rotate(-45deg) translate(1px, 1px);
+}
 
-.tree__dot {
+.fold__dot {
   flex: 0 0 auto;
   width: 4px;
   height: 4px;
@@ -400,20 +466,20 @@ body[data-dock="open"] .menu {
   background: var(--ink-faint);
 }
 
-.tree__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fold__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* La página abierta va subrayada y con el punto lleno: el asistente lee esa. */
-.tree__open[aria-current="true"] .tree__name {
+/* El documento abierto va subrayado y con el punto lleno: el asistente lee ese. */
+.fold__open[aria-current="true"] .fold__name {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-.tree__open[aria-current="true"] .tree__dot { background: var(--ink); }
+.fold__open[aria-current="true"] .fold__dot { background: var(--ink); }
 
-.tree__acts { display: flex; flex: 0 0 auto; gap: 0.1rem; opacity: 0; transition: opacity 0.2s ease; }
-.tree__row:hover .tree__acts,
-.tree__row:focus-within .tree__acts { opacity: 1; }
+.fold__acts { display: flex; flex: 0 0 auto; gap: 0.1rem; opacity: 0; transition: opacity 0.2s ease; }
+.fold__row:hover .fold__acts,
+.fold__row:focus-within .fold__acts { opacity: 1; }
 
-.tree__act {
+.fold__act {
   border: 0;
   background: transparent;
   color: var(--ink-soft);
@@ -426,22 +492,14 @@ body[data-dock="open"] .menu {
   transition: color 0.2s ease;
 }
 
-.tree__act:hover { color: var(--ink); }
-.tree__act:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: 1px; }
-.tree__act--risk:hover { color: #a3341f; }
-.tree__act--risk.is-armed { color: #a3341f; letter-spacing: 0.04em; }
+.fold__act:hover { color: var(--ink); }
+.fold__act:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: 1px; }
+.fold__act--risk:hover { color: #a3341f; }
+.fold__act--risk.is-armed { color: #a3341f; letter-spacing: 0.04em; }
 
-/* Las páginas cuelgan del proyecto con una línea: es la jerarquía, dibujada. */
-.tree__kids {
-  list-style: none;
-  margin: 0 0 0.15rem 0.55rem;
-  padding-left: 0.7rem;
-  border-left: 1px solid var(--ink-line);
-}
+.fold__wait { padding: 0.3rem 0.2rem; color: var(--ink-soft); font-size: 0.76rem; }
 
-.tree__wait { padding: 0.3rem 0.2rem; color: var(--ink-soft); font-size: 0.76rem; }
-
-.tree__field {
+.fold__field {
   width: 100%;
   padding: 0.28rem 0.1rem;
   border: 0;
@@ -452,12 +510,23 @@ body[data-dock="open"] .menu {
   font-size: 0.83rem;
 }
 
-.tree__field:focus { outline: none; border-bottom-color: var(--ink); }
-.tree__field::placeholder { color: rgba(20, 23, 28, 0.3); }
+.fold__field:focus { outline: none; border-bottom-color: var(--ink); }
+.fold__field::placeholder { color: rgba(20, 23, 28, 0.3); }
+
+/* De qué Notion es esto y cómo cambiarlo. Al final de la lista y en voz baja:
+   era una pestaña entera para un dato que no cambia nunca. */
+.wfoot {
+  margin-top: 1.2rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--ink-line);
+  font-size: 0.72rem;
+}
+
+.wfoot__where { color: var(--ink-soft); }
 
 @media (prefers-reduced-motion: reduce) {
-  .tree__caret, .tree__acts, .tree__act { transition: none; }
-  .tree__acts { opacity: 1; }
+  .fold__mark, .fold__acts, .fold__act { transition: none; }
+  .fold__acts { opacity: 1; }
 }
 
 /* --- ajustes de IA (Fase 5) ---------------------------------------------- */
@@ -540,6 +609,22 @@ body[data-dock="open"] .menu {
 }
 
 .lnk:hover { color: var(--ink-soft); }
+
+/* Un botón que se lee como una palabra dentro de una frase: para lo que cambia
+   algo —cambiar de raíz, desconectar— pero no merece la pieza de un botón. */
+.lnkbtn {
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: inherit;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.lnkbtn:hover { color: var(--ink-soft); }
 
 /* Un enlace que se presenta como botón necesita comportarse como uno. */
 a.btn { display: inline-flex; align-items: center; text-decoration: none; }

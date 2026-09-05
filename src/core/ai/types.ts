@@ -55,7 +55,7 @@ export interface ProviderInfo {
    * escribe en github.com).
    */
   auth: "key" | "device";
-  /** Una frase para la pestaña IA: qué es esto y qué cuesta. */
+  /** Una frase para los ajustes del asistente: qué es esto y qué cuesta. */
   hint: string;
   /** Dónde se saca la clave, para no obligar a buscarla. */
   keyUrl?: string;

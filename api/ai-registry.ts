@@ -12,14 +12,14 @@
  * navegador no tiene por qué verlos. Los modelos se piden luego, uno a uno, por
  * `/api/ai-models`.
  *
- * Los tres proveedores de casa se excluyen: ya tienen su propia pestaña.
+ * Los tres proveedores de casa se excluyen: ya tienen su propio botón.
  */
 
 import type { ApiHandler } from "./_types.ts";
 import { basePolicy, describe } from "./_ai.ts";
 import { registryDirectory } from "./_registry.ts";
 
-/** Los que ya están arriba en la pestaña IA, con sus identificadores del registro. */
+/** Los que ya están arriba en los ajustes del asistente, con su id del registro. */
 const MINE = ["openrouter", "nvidia", "github-copilot"] as const;
 
 const handler: ApiHandler = async (req, res) => {

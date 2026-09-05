@@ -20,11 +20,11 @@ const handler: ApiHandler = (_req, res) => {
       notionOAuth: Boolean(
         process.env.NOTION_OAUTH_CLIENT_ID && process.env.NOTION_OAUTH_CLIENT_SECRET
       ),
-      // Si el servidor tiene clave de un proveedor, la pestaña IA no vuelve a
+      // Si el servidor tiene clave de un proveedor, los ajustes no vuelven a
       // pedirla. Se dice que la hay; nunca cuál es.
       ai: configuredProviders(),
-      // Hasta dónde llegan los proveedores propios en este servidor: la pestaña
-      // IA lo dice antes de que la persona escriba una URL que va a rechazarse.
+      // Hasta dónde llegan los proveedores propios en este servidor: los ajustes
+      // lo dicen antes de que la persona escriba una URL que va a rechazarse.
       aiCustom: basePolicy(),
     },
   });

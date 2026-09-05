@@ -45,7 +45,7 @@ export interface RegistryProvider {
   name: string;
   /** URL base de la API, o "" si el registro no la trae. */
   api: string;
-  /** Documentación del proveedor, para enlazarla en la pestaña IA. */
+  /** Documentación del proveedor, para enlazarla en los ajustes del asistente. */
   doc: string;
   /** Cierto cuando habla el formato de OpenAI, que es el que sabemos usar. */
   compatible: boolean;
