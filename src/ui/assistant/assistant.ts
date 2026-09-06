@@ -3,7 +3,7 @@ import { makeMovable, type Movable } from "../drag.ts";
 import { origamiSvg } from "../origami.ts";
 import { onMenuVisible } from "../afterIntro.ts";
 import {
-  activeProvider, aiConfig, chosenModel, hasCredential, probeServerKeys,
+  activeProvider, aiConfig, hasCredential, probeServerKeys,
   providerLabel, serverKeys,
 } from "../../core/ai/config.ts";
 import { ask, conversation, isAsking, resetConversation, stopAsking } from "../../core/ai/conversation.ts";
@@ -29,8 +29,9 @@ import { selection } from "../../core/state/selection.ts";
  *
  * Los ajustes —proveedor, credencial y modelo— **no** están aquí: están en la
  * bandeja de la franja, que se ve incluso con la franja plegada. Estuvieron en las
- * dos partes y sobraba una. Lo que queda es el pie: dice con qué modelo se está
- * hablando y, si falta la credencial, lleva hasta allí (`openAiSettings`).
+ * dos partes y sobraba una. El pie ya no repite el modelo, que los ajustes lo
+ * muestran al elegirlo; sólo habla cuando falta la credencial y, entonces,
+ * lleva hasta allí (`openAiSettings`).
  *
  * Lo que ve, lo ve `conversation.ts`; aquí sólo se dice.
  */
@@ -102,28 +103,33 @@ function paintContext(): void {
     : "Todavía no ve nada: abre una página";
 }
 
-/** Proveedor y modelo, o el aviso de que falta la credencial. */
+/**
+ * El pie habla solo cuando falta algo: la credencial. Con todo en orden no añade
+ * nada a lo que ya dicen los ajustes —el modelo se ve al elegirlo—, y su espacio
+ * se libera para la conversación.
+ */
 function paintFoot(): void {
   if (!footLine) return;
   const provider = activeProvider();
   // Por nombre y no por la tabla: los proveedores propios no están en ella.
   const label = providerLabel(provider);
 
-  if (!hasCredential(provider)) {
-    render(footLine,
-      `${label}: falta la credencial. `,
-      el("button", {
-        class: "lnkbtn",
-        text: "Configúrala aquí",
-        attrs: { type: "button" },
-        on: { click: () => { openAiSettings(); } },
-      }),
-    );
+  if (hasCredential(provider)) {
+    footLine.hidden = true;
+    render(footLine);
     return;
   }
 
-  const model = chosenModel(provider);
-  footLine.textContent = model ? `${label} · ${model}` : label;
+  footLine.hidden = false;
+  render(footLine,
+    `${label}: falta la credencial. `,
+    el("button", {
+      class: "lnkbtn",
+      text: "Configúrala aquí",
+      attrs: { type: "button" },
+      on: { click: () => { openAiSettings(); } },
+    }),
+  );
 }
 
 /* --- preguntar ------------------------------------------------------------ */

@@ -27,6 +27,7 @@ const open = await cdp.evaluate(`(() => {
     seeds: [...pop.querySelectorAll(".ai-seed")].map((b) => b.textContent),
     ctx: pop.querySelector(".ai-pop__ctx").textContent,
     foot: pop.querySelector(".ai-pop__foot").textContent,
+    footHidden: pop.querySelector(".ai-pop__foot").hidden,
     acts: [...pop.querySelectorAll(".ai-pop__act")].map((b) => b.textContent),
   };
 })()`);
@@ -34,7 +35,8 @@ say(open.open === true, "pulsarlo abre la ventana");
 say(open.seeds.length === 3, "con tres preguntas del metodo para arrancar", "n=" + open.seeds.length);
 say(open.ctx.indexOf("Todavia no ve nada") === 0 || open.ctx.indexOf("Todavía no ve nada") === 0,
   "que dice lo que ve, y todavia no ve nada", open.ctx);
-say(open.foot.indexOf("OpenRouter") === 0, "y con que modelo se habla", open.foot);
+say(open.footHidden === true && open.foot === "",
+  "el pie no repite el modelo: ya se ve en los ajustes", JSON.stringify({ foot: open.foot, footHidden: open.footHidden }));
 say(JSON.stringify(open.acts) === JSON.stringify(["Nueva", "×"]), "sin el boton de ajustes que sobraba", JSON.stringify(open.acts));
 
 /* --- ve la intencion y el documento que hay delante --------------------- */
