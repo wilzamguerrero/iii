@@ -23,6 +23,8 @@
   --tint: rgba(20, 23, 28, 0.045);
   /* El texto de sugerencia de un campo vacío. */
   --ghost: rgba(20, 23, 28, 0.3);
+  /* El velo de una hoja modal: la página sigue ahí, apagada. */
+  --veil: rgba(20, 23, 28, 0.22);
   /* Lo que falló. No es el único indicio: el texto también lo dice. */
   --bad: #a3341f;
 
@@ -65,6 +67,8 @@
   --wash: rgba(234, 238, 243, 0.05);
   --tint: rgba(234, 238, 243, 0.08);
   --ghost: rgba(234, 238, 243, 0.32);
+  /* Como las sombras: sobre fondo oscuro, un velo de tinta clara aclararía. */
+  --veil: rgba(0, 0, 0, 0.55);
   --bad: #e79379;
 
   --shadow: 0 14px 40px rgba(0, 0, 0, 0.55);

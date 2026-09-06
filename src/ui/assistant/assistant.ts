@@ -6,8 +6,9 @@ import {
   activeProvider, aiConfig, chosenModel, hasCredential, probeServerKeys,
   providerLabel, serverKeys,
 } from "../../core/ai/config.ts";
-import { mountAiSettings } from "./settings.ts";
 import { ask, conversation, isAsking, resetConversation, stopAsking } from "../../core/ai/conversation.ts";
+import { openAiSettings } from "../dock/tray.ts";
+import { mountMic, type Mic } from "../voice/mic.ts";
 import { intent } from "../../core/state/intent.ts";
 import { selection } from "../../core/state/selection.ts";
 
@@ -26,9 +27,10 @@ import { selection } from "../../core/state/selection.ts";
  * posicionar donde desee»— y también lo que hace que el asistente pueda mirar
  * el documento sin taparlo.
  *
- * Los ajustes —proveedor, credencial y modelo— están aquí dentro y no en la
- * franja de abajo: elegir el modelo es parte de preguntar, y separarlo obligaba a
- * cruzar la pantalla para volver al mismo sitio. `settings.ts` los construye.
+ * Los ajustes —proveedor, credencial y modelo— **no** están aquí: están en la
+ * bandeja de la franja, que se ve incluso con la franja plegada. Estuvieron en las
+ * dos partes y sobraba una. Lo que queda es el pie: dice con qué modelo se está
+ * hablando y, si falta la credencial, lleva hasta allí (`openAiSettings`).
  *
  * Lo que ve, lo ve `conversation.ts`; aquí sólo se dice.
  */
@@ -52,10 +54,7 @@ let field: HTMLTextAreaElement | null = null;
 let sendBtn: HTMLButtonElement | null = null;
 let ctxLine: HTMLElement | null = null;
 let footLine: HTMLElement | null = null;
-let askForm: HTMLElement | null = null;
-let setup: HTMLElement | null = null;
-let setupBtn: HTMLButtonElement | null = null;
-let setupReady = false;
+let mic: Mic | null = null;
 let panelMove: Movable | null = null;
 let handleMove: Movable | null = null;
 
@@ -117,7 +116,7 @@ function paintFoot(): void {
         class: "lnkbtn",
         text: "Configúrala aquí",
         attrs: { type: "button" },
-        on: { click: () => { showSetup(true); } },
+        on: { click: () => { openAiSettings(); } },
       }),
     );
     return;
@@ -195,37 +194,6 @@ async function submit(text: string): Promise<void> {
   }
 }
 
-/* --- ajustes --------------------------------------------------------------- */
-
-/**
- * Los ajustes ocupan el sitio de la conversación en vez de abrirse aparte: la
- * ventana es pequeña y dos paneles a la vez no caben. El registro no se borra,
- * sólo se tapa, así que al volver sigue la conversación donde estaba.
- *
- * Se construyen la primera vez que se piden. Montarlos al arrancar costaría la
- * lectura del catálogo de modelos a quien todavía no ha preguntado nada.
- */
-function showSetup(on: boolean): void {
-  ensure();
-  if (!setup || !log || !askForm) return;
-
-  if (on && !setupReady) {
-    setupReady = true;
-    mountAiSettings(setup);
-  }
-
-  setup.hidden = !on;
-  log.hidden = on;
-  askForm.hidden = on;
-  setupBtn?.setAttribute("aria-pressed", String(on));
-  if (on) setup.scrollTop = 0;
-  else field?.focus();
-}
-
-function toggleSetup(): void {
-  showSetup(Boolean(setup?.hidden));
-}
-
 /* --- construcción --------------------------------------------------------- */
 
 let panelGrip: HTMLElement | null = null;
@@ -257,18 +225,11 @@ function buildPanel(): HTMLElement {
   }, [
     el("span", { class: "ai-pop__title", text: "Asistente" }),
     ctxLine,
-    setupBtn = el("button", {
-      class: "ai-pop__act",
-      text: "Ajustes",
-      attrs: { type: "button", "aria-pressed": "false", title: "Proveedor, credencial y modelo" },
-      on: { click: () => { toggleSetup(); } },
-    }),
     el("button", {
       class: "ai-pop__act",
       text: "Nueva",
       attrs: { type: "button", title: "Empezar otra conversación" },
       on: { click: () => {
-        showSetup(false);
         resetConversation(); paintLog(); busy(false); field?.focus();
       } },
     }),
@@ -306,6 +267,10 @@ function buildPanel(): HTMLElement {
     attrs: { type: "submit", "aria-label": "Preguntar", title: "Preguntar" },
   }, [origamiSvg("ai-pop__ori")]);
 
+  /* Dictar la pregunta. Va antes del avión porque el orden es el del gesto:
+     se escribe o se dicta, y después se manda. */
+  mic = mountMic({ field: area, className: "mic ai-pop__mic" });
+
   const form = el("form", {
     class: "ai-pop__ask",
     on: {
@@ -315,13 +280,7 @@ function buildPanel(): HTMLElement {
         void submit(area.value);
       },
     },
-  }, [area, sendBtn]);
-  askForm = form;
-
-  setup = el("div", {
-    class: "ai-pop__setup",
-    attrs: { hidden: true, "aria-label": "Ajustes del asistente" },
-  });
+  }, mic ? [area, mic.button, sendBtn] : [area, sendBtn]);
 
   footLine = el("p", { class: "ai-pop__foot" });
 
@@ -332,14 +291,11 @@ function buildPanel(): HTMLElement {
       keydown: (event) => {
         if (event.key !== "Escape") return;
         event.stopPropagation();
-        // Con los ajustes abiertos, el Escape vuelve a la conversación: cerrar
-        // la ventana entera dejaría a medias lo que se estaba configurando.
-        if (setup && !setup.hidden) { showSetup(false); return; }
         close();
         handle?.focus();
       },
     },
-  }, [grip, log, form, setup, footLine]);
+  }, [grip, log, form, footLine]);
 
   return box;
 }
@@ -398,6 +354,9 @@ function open(): void {
 
 function close(): void {
   if (!panel || !handle) return;
+  // Cerrar la ventana apaga el micrófono: seguir escuchando lo que se diga
+  // delante de una ventana cerrada no lo pidió nadie.
+  mic?.stop();
   panel.hidden = true;
   handle.setAttribute("aria-expanded", "false");
   handle.classList.remove("is-on");
@@ -406,6 +365,37 @@ function close(): void {
 function toggle(): void {
   if (panel && !panel.hidden) close();
   else open();
+}
+
+/**
+ * Llevar una pregunta al asistente desde otro sitio de la plataforma.
+ *
+ * El editor tiene tres acciones sobre lo que se selecciona —cuestionar, explicar,
+ * precisar— y una revisión del documento entero, y ninguna de las cuatro abre su
+ * propio panel de respuestas: van a esta ventana, que es donde la persona ya sabe
+ * que le contestan y que puede mover para no taparse el texto. Es el principio de
+ * no redundancia aplicado a nuestra propia interfaz: si hay dos sitios donde el
+ * modelo contesta, sobra uno.
+ *
+ * Si está contestando otra cosa, la pregunta se queda escrita en el campo en vez
+ * de tirarse o de cortar la respuesta que se está leyendo.
+ */
+export function askAssistant(question: string): void {
+  const text = question.trim();
+  if (!text) return;
+
+  open();
+
+  if (isAsking()) {
+    if (field) {
+      field.value = text;
+      grow();
+      field.focus();
+    }
+    return;
+  }
+
+  void submit(text);
 }
 
 /**

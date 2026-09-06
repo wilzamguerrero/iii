@@ -75,6 +75,33 @@ function text(content: string): { text: { content: string } } {
 }
 
 /**
+ * Notion parte el texto en fragmentos de 2000 caracteres como máximo, así que un
+ * documento largo no es un fragmento sino varios. Se corta por tamaño y no por
+ * párrafos a propósito: `readPage` los vuelve a unir con `join("")` y el texto
+ * que sale es exactamente el que entró, sin un salto de línea de más.
+ *
+ * Cien fragmentos son 180 000 caracteres, unas sesenta páginas. Pasado eso Notion
+ * rechazaría el bloque entero, así que se dice aquí y no allí.
+ */
+const SPAN_CHARS = 1800;
+const MAX_SPANS = 100;
+
+function spans(content: string): { text: { content: string } }[] {
+  if (!content) return [text("")];
+  const parts: { text: { content: string } }[] = [];
+  for (let at = 0; at < content.length; at += SPAN_CHARS) {
+    parts.push(text(content.slice(at, at + SPAN_CHARS)));
+  }
+  if (parts.length > MAX_SPANS) {
+    throw new Error(
+      `El documento pasa de ${(SPAN_CHARS * MAX_SPANS).toLocaleString("es")} caracteres, ` +
+      "que es lo que cabe en un bloque de Notion. Divídelo en dos documentos.",
+    );
+  }
+  return parts;
+}
+
+/**
  * Todos los hijos de un bloque o página. Notion pagina de cien en cien; un
  * proyecto con más de cien páginas es raro pero el bucle cuesta cinco líneas.
  */
@@ -175,20 +202,24 @@ export async function createProject(
 }
 
 /**
- * Una página nueva, vacía. El nombre va en el `caption` porque un bloque `code`
- * no tiene título, y el `caption` es lo que Notion muestra debajo del recuadro.
+ * Una página nueva. El nombre va en el `caption` porque un bloque `code` no tiene
+ * título, y el `caption` es lo que Notion muestra debajo del recuadro.
+ *
+ * Puede nacer con texto dentro: es lo que hace falta para que un proyecto se cree
+ * con sus tres documentos ya enmarcados en un solo viaje por documento.
  */
 export async function createPage(
   token: string,
   parentId: string,
   name: string,
+  content = "",
 ): Promise<TreeNode> {
   const clean = name.trim() || UNTITLED_PAGE;
   const block = await append(token, parentId, {
     object: "block",
     type: "code",
     code: {
-      rich_text: [text("")],
+      rich_text: spans(content),
       language: "markdown",
       caption: [text(clean)],
     },
@@ -226,4 +257,23 @@ export async function readPage(
     content: joinText(block.code?.rich_text),
     language: block.code?.language ?? "markdown",
   };
+}
+
+/**
+ * Guardar el texto de una página.
+ *
+ * Un `PATCH` sobre el bloque `code` reemplaza su `rich_text` entero, así que
+ * guardar es mandar el documento completo. Es una petición por guardado y por eso
+ * quien escribe espera a que la persona deje de teclear antes de llamar aquí:
+ * Notion admite unas tres peticiones por segundo.
+ */
+export async function writePage(
+  token: string,
+  pageId: string,
+  content: string,
+): Promise<void> {
+  await notionRequest(token, `/blocks/${pageId}`, {
+    method: "PATCH",
+    body: { code: { rich_text: spans(content) } },
+  });
 }

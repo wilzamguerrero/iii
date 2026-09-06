@@ -351,7 +351,7 @@ resuelve `three` al archivo vendorizado y mantener dos mecanismos era engañoso.
 - *Pendiente de confirmar a ojo:* que los cinco actos se vean igual. El código de la intro
   no cambió, pero eso no lo demuestra una terminal.
 
-### Fase 1 · Franja inferior + conexión Notion
+### Fase 1 · Franja inferior + conexión Notion — **escrita**
 Franja retráctil —tres pestañas de sección entonces; hoy un panel separado de los lados con
 pestañas de navegación, §12 D6—. Flujo
 OAuth completo: `getOAuthUrl` con `state`
@@ -400,7 +400,11 @@ jerarquía correcta; renombrar y borrar se reflejan en ambos lados; recargar res
 token falso— y `/v1/users` la rechaza la lista blanca. El viaje con un Notion real es del
 navegador de quien lo usa: el token vive en su `localStorage`.
 
-### Fase 3 · Editor tipo Notion
+### Fase 3 · Editor tipo Notion — **escrita, y no como dice aquí (§12 D7)**
+Lo de abajo es lo que se planeó; lo que se escribió es Markdown en un `textarea` con una
+vista de lectura, sin ninguna de estas tres dependencias, y guardando solo en vez de con
+botón. El por qué está en §12 D7, que es la decisión a confirmar o rechazar.
+
 `@tiptap/core` + StarterKit + `tiptap-markdown`, **un editor por documento** —no uno por
 bloque; la referencia documenta que lo contrario rompe Enter, arrastre y espaciado. Menú
 "/", menú de burbuja, títulos, listas, citas, código, tablas.
@@ -411,13 +415,18 @@ de Notion es ~3 req/s.
 petición a Notion**; guardar y ver el Markdown correcto en Notion; ida y vuelta
 markdown → editor → markdown sin pérdida en un documento con todos los tipos de bloque.
 
-### Fase 4 · Voz
+### Fase 4 · Voz — **escrita**
 Web Speech API (`es-ES`, continuo, sólo resultados finales, reinicio automático en `onend`,
 `aborted` ignorado) en dos sitios: el campo de intención del inicio y el editor. Manejo de
 permiso denegado y de navegador sin soporte —el botón se oculta, no falla.
 *Verificación:* dictar un párrafo en el campo de intención y enviarlo; dictar dentro del
 editor con los espacios correctos antes y después de signos de puntuación; probar en un
 navegador sin soporte y confirmar que la UI no se rompe.
+
+Quedó en **tres** sitios y no en dos —la intención, la hoja y la ventana del asistente: al
+asistente también se le habla—, y el idioma se toma del navegador cuando ya es español
+(`es-CO` reconoce el habla de aquí mejor que un `es-ES` genérico). El reencendido tras cada
+pausa lleva tope: seis en tres segundos y se apaga, que un bucle no es escuchar.
 
 ### Fase 5 · Asistente de IA flotante — **escrita, adelantada**
 Se adelantó a las Fases 3 y 4 porque el asistente es lo que hace que la plataforma
@@ -461,7 +470,7 @@ vacío y 401 sin credencial; el alta por dispositivo de GitHub devuelve un `user
 con su intervalo y su caducidad. Falta una respuesta viva, que necesita la clave de quien
 lo usa.
 
-### Fase 6 · Motor de intención
+### Fase 6 · Motor de intención — **empezada**
 Aquí la aplicación deja de ser un editor con IA y empieza a ser la plataforma 3i.
 Diálogo guiado por las ocho operaciones de §6.1, con una salida firmada por el autor en
 cada paso. Prompts distintos por operación, todos bajo la misma regla: **la IA pregunta y
@@ -471,6 +480,12 @@ escribe la naturaleza en los metadatos del proyecto.
 los vendedores del centro pero no sé qué"*— llegar a un Marco Estratégico completo con las
 seis piezas de §4.6.1; que la IA haya cuestionado al menos una formulación del autor en el
 camino; que el Marco quede guardado en Notion y sea reabrible.
+
+Escrito ya: la intención se manda desde la entrada y **se vuelve un proyecto**. La IA propone
+un nombre y las preguntas que hay que responder para ese caso —ninguna viene hecha de
+antemano—, se crean la carpeta y los tres documentos (Indagar, Idear, Implementar) bajo la
+raíz elegida, y la franja se abre en el proyecto nuevo. Falta el diálogo de las ocho
+operaciones y el Marco.
 
 ### Fase 7 · Catálogo instrumental y despliegue por situación
 El catálogo como JSON con el esquema de §6.2. Validador que rechaza dos herramientas con la
@@ -550,12 +565,15 @@ Lo que ya existe va sin marca; lo que todavía es destino de una fase lleva **(F
 │   │   ├── notion/             · oauth · client · types · tree (proyectos y páginas)
 │   │   ├── ai/                 · types · config · wire · models · device · chat
 │   │   │                         prompt (el sistema 3i) · conversation (el hilo)
+│   │   │                         review (la columna de la derecha) · json (respuestas
+│   │   │                         con forma) · scaffold (de la intención al proyecto)
 │   │   ├── state/              · intent · selection — lo que el asistente ve
 │   │   │                         theme — claro · oscuro · automático
-│   │   ├── persist/            · session (Notion) · draftCache IndexedDB (Fase 3)
-│   │   ├── editor/             · TipTap, markdown, comandos «/» (Fase 3)
-│   │   └── voice/              · dictado (Fase 4)
-│   ├── methodology/            · (Fases 6-9)
+│   │   ├── persist/            · session (Notion) · drafts (IndexedDB)
+│   │   ├── project/            · create — la carpeta y sus tres documentos
+│   │   ├── method/             · structures — las tres formas del Reglamento
+│   │   └── voice/              · dictate — el reconocedor del navegador
+│   ├── methodology/            · (Fases 7-9)
 │   │   ├── fases.ts            · las 8 operaciones de Indagar, modos, realidades
 │   │   ├── naturalezas.ts      · las 6 + combinación
 │   │   ├── catalogo.json       · instrumental con función, nivel, rastro
@@ -566,27 +584,37 @@ Lo que ya existe va sin marca; lo que todavía es destino de una fase lleva **(F
 │   ├── ui/
 │   │   ├── dom.ts              · el(), render(), debounce — sin innerHTML
 │   │   ├── origami.ts          · la figura de papel, una sola fuente
-│   │   ├── icons.ts            · los trazos: carpeta, página, silueta, mandos
+│   │   ├── icons.ts            · los trazos, todos en la rejilla de 24
 │   │   ├── afterIntro.ts       · la señal de «la intro ya terminó»
 │   │   ├── drag.ts             · ponlo donde quieras, y que ahí se quede
 │   │   ├── dock/               · la franja: dock · tabs · tray · workspace
-│   │   │                         folders · menu
-│   │   ├── assistant/          · el tirador de papel y su ventana de chat
-│   │   ├── editor/             · contenedor del editor (Fase 3)
+│   │   │                         folders · tree (desde la raíz) · menu · reload
+│   │   ├── start/              · de la intención al proyecto: entry · begin · open
+│   │   ├── assistant/          · el tirador de papel, su ventana y los ajustes
+│   │   ├── writer/             · la hoja: writer · markdown · outline · panel
+│   │   │                         save · structure  (§12 D7, no es tiptap)
+│   │   ├── voice/              · mic — el mismo botón en los tres sitios
 │   │   └── fase/               · panel de estado 3i (Fase 6)
 │   └── styles/
 │       ├── app.css             · único punto de entrada de la cascada
 │       ├── tokens.css          · los originales sin tocar, más el tema oscuro
 │       ├── intro.css           · el resto del CSS de la intro, intacto
 │       ├── dock.css            · la franja, las pestañas, las baldosas, el panel
+│       ├── writer.css          · la hoja, sus columnas y la vista de lectura
+│       ├── begin.css           · el arranque de un proyecto
+│       ├── voice.css           · el botón de dictar
 │       └── assistant.css       · el tirador y la ventana flotante
+├── smoke/                      · 153 comprobaciones en un Chrome sin ventana (§12 D8)
+│   ├── run.mjs · part.mjs · cdp.mjs · README.md
+│   ├── parts/                  · siete, una por lo que hace la plataforma
+│   └── doubles/                · Notion, el modelo y la voz, fingidos
 ├── docs/                       · Documento Maestro 3i, estructura CESMAG
 ├── reference/                  · sólo consulta; ni se compila ni se vigila
 └── plan.md
 ```
 
-Hoy están hechas las Fases 0, 1, 2 y 5. La intención vive ya en `core/state/intent.ts`,
-que era la costura que `main.js` emitía sin que nadie escuchara.
+Hoy están hechas las Fases 0 a 5 y el arranque de la 6. La intención vive en
+`core/state/intent.ts`, que era la costura que `main.js` emitía sin que nadie escuchara.
 ---
 
 ## 9. Antes y después
@@ -784,16 +812,81 @@ Ninguno queda bloqueado por las decisiones de este plan.
    clásico de `index.html` —un módulo diferido pintaría el blanco primero y se vería el
    salto— y `core/state/theme.ts` gobierna de ahí en adelante.
 
+7. **D7 — El editor es Markdown en un `textarea`, no tiptap.** **Aplicada en la Fase 3
+   (2026-09-05), y se aparta de lo que esta misma tabla planeaba.** La Fase 3 de §7 pedía
+   `@tiptap/core` + StarterKit + `tiptap-markdown`. Se escribió sin ninguna de las tres, y
+   conviene decirlo en vez de dejar el plan diciendo otra cosa.
+
+   Por qué: la página **ya es Markdown** (D2), así que un editor rico obliga a traducir en
+   los dos sentidos en cada apertura y en cada guardado, y toda pérdida de esa ida y vuelta
+   es texto de alguien. El brief pedía además «una interfaz muy simple y blanca»; tiptap son
+   unas trescientas kilobytes de dependencias en el navegador para un documento que se lee y
+   se guarda de una vez. Y lo que la plataforma tiene que hacer bien no es negrita ni
+   tablas: es **preguntar sobre lo escrito**, y para eso el texto plano es mejor material.
+
+   Qué hay en su lugar: un `textarea` con el Markdown, una vista de **lectura** que lo pinta
+   (`writer/markdown.ts`, sin `innerHTML`), la columna de apartados a la izquierda sacada del
+   propio texto, la de revisión a la derecha, las tres estructuras del reglamento
+   insertables, y las tres acciones sobre lo marcado. **Sí se cumplió** lo que la Fase 3
+   pedía del guardado: borrador en IndexedDB —a los 500 ms, gratis— antes de tocar la red, y
+   Notion a los 1400 ms de haber parado de teclear, con `Ctrl+S` y aviso al cerrar. Lo que
+   no se cumplió es el guardado **explícito**: guarda solo y lo dice en la barra. Un botón
+   «Guardar» en 2026 es trabajo que se pierde cuando alguien no lo pulsa.
+
+   El precio, asumido: no hay menú «/» ni burbuja de formato, y las tablas se escriben a
+   mano. Si más adelante hace falta un editor rico, el cambio afecta a `ui/writer/` y no al
+   resto: lo que entra y sale de `core/notion/tree.ts` seguiría siendo Markdown.
+
+8. **D8 — El humo vive en el repositorio (`smoke/`).** **Aplicada el 2026-09-05, y es la
+   que más conviene confirmar o rechazar.** Las siete partes que comprueban la plataforma se
+   escribieron como guiones de usar y tirar en un directorio temporal; ahora están dentro,
+   con `npm run smoke`. Son 153 comprobaciones sobre la plataforma de verdad en un Chrome sin
+   ventana, y **sin una sola dependencia nueva**: `smoke/cdp.mjs` son sesenta líneas de
+   protocolo de depuración sobre el `WebSocket` y el `fetch` que ya trae Node.
+
+   A favor: es lo que hizo posible «que sea sin errores y en bucle», y ya encontró dos fallos
+   que ningún `tsc` iba a ver —el micrófono que se apagaba sin decir que era por falta de
+   permiso, y la barra de selección que volvía sola un instante después de preguntar—. En
+   contra: es código que hay que mantener cuando la interfaz cambie, y sus dobles de Notion y
+   del modelo pueden quedarse viejos y dar por bueno algo que ya no lo es. `smoke/README.md`
+   dice qué finge cada uno y qué no puede probar ninguno.
+
 ---
 
 ## 13. Estado y siguiente paso
 
-**Fases 0, 1, 2 y 5 escritas** (2026-09-05). La intro sigue byte a byte como estaba. La
-franja se reordenó dos veces ese mismo día, las dos al usarla (§12 D6): primero una sola
-pantalla en vez de tres pestañas de sección, los ajustes de IA dentro de la ventana del
-asistente y las carpetas recorridas en horizontal; después la franja pasó a ser un panel
-separado de los lados, con pestañas de navegación, las carpetas en baldosas, tres botones
-en el extremo de la tira —Notion, IA y sistema— y tema claro/oscuro.
+**Fases 0 a 5 escritas** (2026-09-05), más la parte de la Fase 6 que convierte una intención
+en un proyecto. La intro sigue byte a byte como estaba. La franja se reordenó dos veces ese
+mismo día, las dos al usarla (§12 D6): primero una sola pantalla en vez de tres pestañas de
+sección, los ajustes de IA dentro de la ventana del asistente y las carpetas recorridas en
+horizontal; después la franja pasó a ser un panel separado de los lados, con pestañas de
+navegación, las carpetas en baldosas, tres botones en el extremo de la tira —Notion, IA y
+sistema— y tema claro/oscuro.
+
+**Las diez cosas que se pidieron ese día, y dónde quedó cada una:**
+
+1. El tema **claro por defecto**: sin nada guardado, `data-theme="light"`.
+2. **Fuera el botón «Ajustes»** de la ventana del asistente. Ya estaba en la tira, y tenerlo
+   dos veces no lo hacía más fácil de encontrar.
+3. **Esquinas rectas** como las de los paneles: `--r-panel: 3px` gobierna las dos cosas, y
+   ningún botón se redondea más que un panel.
+4. **Iconos de material-symbols-light**, todos en la misma rejilla de `0 0 24 24` y a 36 px,
+   que es lo que les da unidad gráfica.
+5. **El árbol desde la raíz**, a la izquierda del explorador, como en la referencia: el
+   triángulo abre un proyecto y deja ver sus tres documentos sin salir de donde estás.
+6. **La intención se vuelve proyecto**: la carpeta con Indagar, Idear e Implementar dentro, y
+   las preguntas que la IA propone escritas **para ese caso** —ninguna viene hecha de
+   antemano, que es la condición del método—.
+7. **Lo mejor de las otras plataformas** donde tenía sentido: la columna de revisión que
+   marca faltas, respaldos y flojos sobre el texto abierto, y las tres acciones sobre lo
+   marcado —Cuestionar, Explicar, Precisar—. Revisa mientras se escribe; no escribe por nadie.
+8. **El espacio para leer las estructuras**: la vista de lectura, y las tres formas del
+   Reglamento del CESMAG —Idea, Anteproyecto, Trabajo de Grado— insertables una sola vez,
+   sabiendo cuál sigue ya el documento.
+9. **La voz**, en los tres sitios donde se escribe: la intención de la entrada, la ventana
+   del asistente y la hoja. Cae donde está el cursor, con su espacio, y sin permiso se apaga
+   diciendo por qué.
+10. **«Sin errores y en bucle hasta que todo quede perfecto»**: de ahí salió el humo, abajo.
 
 Lo que hay en pie:
 
@@ -823,23 +916,56 @@ Lo que hay en pie:
   Todo eso se configura en «Ajustes», que está en dos sitios que son el mismo: la ventana
   del asistente y el botón de papel del extremo de la franja.
 - **El asistente**: tirador de papel y ventana, los dos arrastrables y persistentes; el
-  hilo de la conversación fuera de la interfaz; el sistema 3i escrito para preguntar.
+  hilo de la conversación fuera de la interfaz; el sistema 3i escrito para preguntar. Lo que
+  ve es **lo que se acaba de escribir**, no lo último guardado: mientras la hoja está
+  delante, el contexto se toma de ella y no se le vuelve a pedir nada a Notion.
+- **El documento** (Fase 3, y §12 D7 dice en qué se apartó del plan): el Markdown en un
+  `textarea`, la vista de lectura que lo pinta, los apartados a la izquierda sacados del
+  propio texto, la revisión a la derecha, las tres estructuras del Reglamento insertables y
+  las tres acciones sobre lo marcado. Guarda solo y lo dice: borrador en IndexedDB a los
+  500 ms, Notion a los 1400 ms de parar de teclear, `Ctrl+S` y aviso al cerrar.
+- **La voz** (Fase 4): el reconocedor del navegador, en español, sólo frases terminadas, con
+  reencendido tras cada pausa y tope para que no se vuelva un bucle. El mismo botón en los
+  tres sitios donde se escribe, y no se pinta donde el navegador no sepa hacerlo.
+- **El arranque de un proyecto** desde la intención (lo primero de la Fase 6): la IA propone
+  nombre y preguntas para ese caso, se crean la carpeta y los tres documentos en la raíz, y
+  la franja se abre en el proyecto nuevo.
 - **El tema** claro, oscuro o automático, en los ajustes del sistema: una segunda tabla de
   variables en `tokens.css`, aplicada antes del primer pintado. La intro no cambia de color.
 
-**Lo que no se puede verificar desde una terminal**, y por tanto queda a ojo en el
-navegador de quien lo usa:
+**El humo: 153 comprobaciones sobre la plataforma de verdad** (`npm run smoke`; qué finge
+cada doble y qué no puede probar ninguno está en `smoke/README.md`). Siete partes que abren
+la plataforma en un Chrome sin ventana y la manejan como la manejaría una persona; sólo se
+finge lo que está fuera —Notion, el modelo y el reconocedor de voz del navegador—. Sin una
+dependencia nueva: el cliente del protocolo de depuración son sesenta líneas sobre el
+`WebSocket` y el `fetch` que ya trae Node. Que viva en el repositorio es lo que §12 D8 pone
+a confirmar.
+
+Y sirvió para lo que se puso: **dos fallos que ningún `tsc` iba a ver**.
+
+- **El micrófono se apagaba sin decir por qué.** Al fingir el reconocedor con fidelidad
+  —`abort()` acaba también en `onend`, como en Chrome— salió que el apagón se contaba dos
+  veces, y el segundo aviso, que no trae motivo, devolvía el botón a «Dictar»: quien no había
+  dado permiso al micrófono se quedaba sin saber por qué había dejado de escuchar.
+  `core/voice/dictate.ts` cuenta ahora una sola vez por encendido.
+- **La barra de selección volvía sola.** Pedir una de las tres acciones lleva el foco a la
+  ventana del asistente, y mover el foco avisa de que la selección cambió; ese aviso volvía a
+  mirar lo marcado —que sigue marcado, porque el texto no se toca— y devolvía la barra un
+  instante después de haberla quitado. `ui/writer/writer.ts` recuerda ahora para qué se quitó.
+
+**Lo que el humo no prueba**, y por tanto queda a ojo en el navegador de quien lo usa:
 
 1. **Las carpetas contra un Notion real.** El token vive en el `localStorage` del navegador
    que autorizó, así que la vuelta entera —crear una carpeta, tres páginas dentro, entrar,
    volver por las migas, verlas en Notion con la jerarquía correcta, renombrar, borrar,
-   recargar— sólo la puede hacer quien conectó. Sin página raíz elegida la pantalla no
-   ofrece otra cosa: sin raíz no hay dónde colgar nada.
-2. **Una respuesta viva del asistente.** No hay ninguna clave en el entorno de este
-   servidor a propósito. En «Ajustes» —la ventana del asistente o el botón de papel de la
-   franja—: pegar una clave de OpenRouter, o conectar la cuenta de GitHub con el código que
-   aparece. Después, abrir una página y preguntarle qué
-   le falta: si responde citando lo que hay escrito, el contexto funciona.
+   recargar— sólo la puede hacer quien conectó, y con ella el camino de OAuth. Sin página
+   raíz elegida la pantalla no ofrece otra cosa: sin raíz no hay dónde colgar nada.
+2. **Una respuesta viva.** No hay ninguna clave en el entorno de este servidor a propósito.
+   En «Ajustes» —la ventana del asistente o el botón de papel de la franja—: pegar una clave
+   de OpenRouter, o conectar la cuenta de GitHub con el código que aparece. Después, abrir
+   una página y preguntarle qué le falta. El humo prueba que **le llega** lo escrito; que lo
+   que contesta sirva, y que las preguntas del arranque valgan para un caso de verdad, sólo
+   se ve preguntando.
 3. **Un proveedor añadido a mano contra su API real.** El servidor se probó con un eco
    local y contra una pasarela de verdad: las cabeceras llegan como se escribieron, las
    prohibidas se rechazan con 400, el corte de quince segundos salta, y por el camino de
@@ -848,16 +974,19 @@ navegador de quien lo usa:
    vuelta completa en el navegador: añadir la API, desplegar «Autenticación y cabeceras»,
    elegir `api-key` o `x-api-key` si toca, guardar, ver el catálogo o escribir el modelo, y
    «Probar conexión» hasta que conteste.
-4. **La franja rediseñada.** `tsc --noEmit` y `npm run build` pasan, y eso no dice nada de
-   cómo se ve. Queda por mirar en el navegador: las esquinas redondeadas y los huecos de los
-   lados con la franja plegada; abrir, cerrar y cambiar de pestaña, y «Abrir en otra pestaña»
-   desde una baldosa; los tres botones del extremo con la franja plegada, y que al plegar o
-   desplegar se cierren en vez de perseguir al botón; y el tema oscuro, con la intro incluida:
-   tiene que seguir siendo blanca.
-5. **Los cinco actos de la intro**, que el código no demuestra por no haber cambiado.
+4. **El micrófono de verdad.** El humo dobla el reconocedor del navegador: prueba nuestro
+   lado —cuándo se enciende, dónde cae lo dicho, cómo se apaga y qué dice al apagarse—, no
+   que Chrome entienda el español de aquí. Queda dictar un párrafo hablando, en la entrada y
+   en la hoja.
+5. **Cómo se ve.** Ni `tsc --noEmit`, ni `npm run build`, ni 153 comprobaciones dicen nada de
+   la tipografía, del aire, del tema oscuro con la intro blanca dentro, ni de cómo queda todo
+   en una pantalla pequeña. Y los cinco actos de la intro, que el código no demuestra por no
+   haber cambiado.
 
-**Siguiente: Fase 3 — editor tipo Notion.** Es la que falta para que la plataforma escriba
-y no sólo lea: hoy una página se abre para que el asistente la vea, pero el texto se sigue
-editando en Notion. Con el editor dentro llegan también las acciones sobre la selección que
-la Fase 5 dejó pendientes —explicar, cuestionar, insertar, reemplazar— y el borrador en
-IndexedDB que hace que el guardado explícito no cueste nada perder.
+**Siguiente: Fase 6 — motor de intención.** Lo primero de esa fase ya está —una intención se
+vuelve un proyecto con sus tres documentos, y las preguntas se escriben para el caso—, y lo
+que falta es el diálogo entero: las ocho operaciones de §6.1, cada una con su salida firmada
+por el autor, hasta el *Marco Estratégico de Ideación* y la naturaleza escrita en los
+metadatos del proyecto. Es lo que hace que la plataforma deje de ser un editor con IA. La
+Fase 7 depende de que la tabla de §6.2 pase por Edison antes (§12.5), así que el orden se
+mantiene.

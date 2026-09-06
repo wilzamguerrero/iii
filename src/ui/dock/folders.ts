@@ -1,11 +1,15 @@
 import { el, render } from "../dom.ts";
-import { icon } from "../icons.ts";
+import { icon, setIcon } from "../icons.ts";
 import { anchorOf, openMenu, type MenuAt, type MenuItem } from "./menu.ts";
+import { onMade } from "./reload.ts";
+import { mountTree } from "./tree.ts";
+import { openBegin } from "../start/open.ts";
 import { NotionRequestError } from "../../core/notion/client.ts";
 import {
   createPage, createProject, deleteNode, readChildren, renameNode,
   UNTITLED_PAGE, UNTITLED_PROJECT, type TreeNode,
 } from "../../core/notion/tree.ts";
+import { intent } from "../../core/state/intent.ts";
 import { clearSelection, selectPage, selection } from "../../core/state/selection.ts";
 
 /**
@@ -80,6 +84,8 @@ export function mountFolders(options: FoldersOptions): Folders {
   const path: Crumb[] = seed();
   const grid = el("ul", { class: "grid" });
   const status = el("p", { class: "msg" });
+  /** La columna que se desplaza. El árbol se desplaza por su cuenta. */
+  const body = el("div", { class: "exp__body" }, [grid, status]);
   /** Descarta la respuesta de una carpeta que ya no es la que se está viendo. */
   let seq = 0;
 
@@ -148,9 +154,16 @@ export function mountFolders(options: FoldersOptions): Folders {
    */
   function actions(): HTMLElement[] {
     if (atRoot()) {
-      return [crumbAct("Nuevo proyecto", () => {
+      const acts = [crumbAct("Nuevo proyecto", () => {
         askName("project", "Nombre del proyecto…", addFolder);
       })];
+      /* Con una intención anotada, el camino corto: el asistente propone el nombre
+         y las preguntas, y de ahí salen la carpeta y sus tres documentos. Va
+         primero porque es el que se quiere: crear a mano es el de después. */
+      if (intent.get()) {
+        acts.unshift(crumbAct("Crear desde la intención", () => { openBegin(); }));
+      }
+      return acts;
     }
     return [
       crumbAct("Nueva página", () => { askName("page", "Nombre de la página…", addPage); }),
@@ -205,8 +218,22 @@ export function mountFolders(options: FoldersOptions): Folders {
   function moved(): void {
     paintCrumbs();
     announce();
-    pane.scrollTop = 0;
+    body.scrollTop = 0;
     void load();
+  }
+
+  /**
+   * Ir a un camino entero, no un paso: es lo que pide el árbol, que puede
+   * señalar cualquier rama. Se comprueba que cuelgue de esta raíz —cambiar de
+   * raíz invalida los ids— y no se relee lo que ya se está mirando.
+   */
+  function goPath(next: readonly Crumb[]): void {
+    const first = next[0];
+    if (!first || first.id !== root) return;
+    if (next.length === path.length && next.every((crumb, at) => crumb.id === path[at]?.id)) return;
+    path.length = 0;
+    path.push(...next.map((crumb) => ({ ...crumb })));
+    moved();
   }
 
   /* --- leer y pintar ----------------------------------------------------- */
@@ -222,6 +249,10 @@ export function mountFolders(options: FoldersOptions): Folders {
       const children = await readChildren(token, here().id);
       if (mine !== seq) return;   // se entró en otra carpeta mientras llegaba
       paint(children);
+      // La misma lectura sirve al árbol: primero se le da y después se le pide
+      // que abra el camino, para que no vuelva a pedir lo que acaba de recibir.
+      tree.feed(here().id, children);
+      tree.reveal(path);
       say("");
     } catch (cause) {
       if (mine !== seq) return;
@@ -258,6 +289,22 @@ export function mountFolders(options: FoldersOptions): Folders {
   }
 
   /**
+   * Un documento pulsado en el árbol: se abre y la retícula se va a la carpeta
+   * donde vive. El árbol dice dónde está cada cosa, así que abrir desde ahí tiene
+   * que dejar a la vista lo que hay alrededor.
+   */
+  function openFromTree(node: TreeNode, at: readonly Crumb[]): void {
+    goPath(at);
+    const folder = at[at.length - 1];
+    selectPage({
+      id: node.id,
+      name: node.name,
+      parentId: node.parentId,
+      ...(at.length > 1 && folder ? { projectName: folder.name } : {}),
+    });
+  }
+
+  /**
    * En otra pestaña: una carpeta se abre dentro; un documento abre la carpeta
    * donde vive y se selecciona. Es la misma idea —la pestaña es un sitio— y deja
    * dos carpetas a la vista para mover cosas de una a otra con la mirada.
@@ -275,6 +322,7 @@ export function mountFolders(options: FoldersOptions): Folders {
     try {
       await renameNode(token, node, name);
       node.name = name;
+      tree.rename(node.id, name);
       say("");
     } catch (cause) {
       say(reason(cause, "No se pudo renombrar."), true);
@@ -286,6 +334,7 @@ export function mountFolders(options: FoldersOptions): Folders {
       await deleteNode(token, node.id);
       const chosen = selection.get();
       if (chosen && (chosen.id === node.id || chosen.parentId === node.id)) clearSelection();
+      tree.drop(node.id);
       cell.remove();
       if (grid.children.length === 0) paintEmpty();
       say("");
@@ -363,7 +412,6 @@ export function mountFolders(options: FoldersOptions): Folders {
 
       const more = el("button", {
         class: "tile__more",
-        text: "⋯",
         attrs: { type: "button", "aria-label": `Acciones de ${name}`, "aria-haspopup": "menu" },
         on: {
           click: (event) => {
@@ -371,7 +419,7 @@ export function mountFolders(options: FoldersOptions): Folders {
             openMenu(anchorOf(more), menuOf(node, cell, edit));
           },
         },
-      });
+      }, [icon("more", "ico ico--small")]);
 
       render(cell, tile, more);
       if (node.kind === "page") markSelected();
@@ -462,6 +510,7 @@ export function mountFolders(options: FoldersOptions): Folders {
       const created = await createProject(token, here().id, name);
       grid.querySelector(".grid__note")?.remove();
       grid.append(cellOf(created));
+      tree.add(here().id, created);
       say("");
     } catch (cause) {
       say(reason(cause, "No se pudo crear la carpeta."), true);
@@ -473,6 +522,7 @@ export function mountFolders(options: FoldersOptions): Folders {
       const created = await createPage(token, here().id, name);
       grid.querySelector(".grid__note")?.remove();
       grid.append(cellOf(created));
+      tree.add(here().id, created);
       // Se abre lo que se acaba de crear: es lo que se iba a hacer con ella.
       selectPage({
         id: created.id, name: created.name, parentId: here().id,
@@ -492,33 +542,89 @@ export function mountFolders(options: FoldersOptions): Folders {
   function markSelected(): void {
     for (const node of grid.querySelectorAll<HTMLElement>('.tile[aria-current="true"]')) {
       node.setAttribute("aria-current", "false");
+      mark(node, "page");
     }
     const chosen = selection.get();
     if (!chosen) return;
-    grid
-      .querySelector<HTMLElement>(`.tile[data-page-id="${CSS.escape(chosen.id)}"]`)
-      ?.setAttribute("aria-current", "true");
+    const open = grid.querySelector<HTMLElement>(
+      `.tile[data-page-id="${CSS.escape(chosen.id)}"]`,
+    );
+    if (!open) return;
+    open.setAttribute("aria-current", "true");
+    mark(open, "pageFull");
+  }
+
+  /** La hoja del documento abierto es maciza; la de las demás, de contorno. */
+  function mark(tile: HTMLElement, name: "page" | "pageFull"): void {
+    const svg = tile.querySelector<SVGSVGElement>(".tile__ico svg");
+    if (svg) setIcon(svg, name);
   }
 
   /* --- puesta en marcha --------------------------------------------------- */
 
-  render(pane, grid, status);
+  const tree = mountTree({
+    token,
+    root,
+    rootTitle: options.rootTitle,
+    goTo: goPath,
+    open: openFromTree,
+    revoked: () => { options.revoked?.(); },
+  });
+
+  /* El cuerpo de la pestaña deja de desplazarse él y pasa a ser dos columnas:
+     el árbol a la izquierda y la retícula a la derecha, cada una con su
+     desplazamiento. La clase se quita al desmontar porque el mismo hueco lo usan
+     las otras pantallas —conectar, elegir raíz—, que sí se desplazan enteras. */
+  pane.classList.add("dock__pane--exp");
+  render(pane, el("div", { class: "exp" }, [
+    el("aside", { class: "exp__tree", attrs: { "aria-label": "Desde la raíz" } }, [tree.root]),
+    body,
+  ]));
+
   paintCrumbs();
   announce();
   void load();
 
   const stop = selection.subscribe(markSelected);
 
+  /**
+   * Lo creado desde fuera: el proyecto que nace de la intención, que puede haberse
+   * hecho con la franja plegada. Se pinta con los nodos que trae el aviso en vez de
+   * releer la carpeta, y si el aviso señala un sitio, se entra en él.
+   */
+  /* La primera intención escrita con la franja abierta tiene que aparecer como
+     acción sin recargar nada. */
+  const stopIntent = intent.subscribe(() => { if (atRoot()) paintCrumbs(); });
+
+  const stopMade = onMade((made) => {
+    if (made.parentId === here().id) {
+      grid.querySelector(".grid__note")?.remove();
+      for (const node of made.nodes) grid.append(cellOf(node));
+      markSelected();
+    }
+    for (const node of made.nodes) tree.add(made.parentId, node);
+    // Entrar sólo lo hace la pestaña que se está viendo. Una pestaña es un sitio y
+    // llevárselas todas al proyecto nuevo sería quitarle a alguien lo que dejó
+    // abierto; las demás se enteran de que existe y se quedan donde están. Se
+    // reconoce por el `hidden` que les pone la barra de pestañas.
+    if (made.enter && !pane.closest("[hidden]")) goPath(made.enter);
+  });
+
   return {
     retitle(title) {
       const first = path[0];
       if (!first || first.name === title) return;
       first.name = title;
+      tree.retitle(title);
       paintCrumbs();
       announce();
     },
     dispose() {
       stop();
+      stopIntent();
+      stopMade();
+      tree.dispose();
+      pane.classList.remove("dock__pane--exp");
       render(head);
     },
   };

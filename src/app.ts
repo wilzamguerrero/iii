@@ -22,7 +22,9 @@ import { openSession } from "./core/persist/session.ts";
 import { mountAssistant } from "./ui/assistant/assistant.ts";
 import { mountDock } from "./ui/dock/dock.ts";
 import { notionExchangeFailed, notionExchangeStarted } from "./ui/dock/workspace.ts";
-import { rememberIntent } from "./core/state/intent.ts";
+import { mountBegin } from "./ui/start/begin.ts";
+import { mountEntry } from "./ui/start/entry.ts";
+import { mountWriter } from "./ui/writer/writer.ts";
 import { startTheme } from "./core/state/theme.ts";
 
 export interface IntentSubmitDetail {
@@ -50,13 +52,22 @@ const dock = mountDock();
 mountAssistant();
 
 /**
- * La intención escrita en la entrada. `main.js` la anunciaba y no había nadie
- * escuchando: es el primer contexto que el asistente necesita para poder
- * preguntar por algo concreto. Llevarla a Notion es la Fase 3.
+ * El documento. Se monta escuchando qué página está abierta y no se ve hasta que
+ * hay una: abrir un documento es elegirlo en la franja, así que el árbol no
+ * necesita saber que existe un editor ni el editor cómo se llega a él.
  */
-document.addEventListener("intent:submit", (event) => {
-  rememberIntent(event.detail.intent, event.detail.at);
-});
+mountWriter();
+
+/**
+ * La entrada: el campo de la intención. `main.js` la anunciaba y no había nadie
+ * escuchando; ahora se recuerda —es el primer contexto del asistente—, se puede
+ * dictar y abre la pantalla que crea el proyecto en Notion con sus tres documentos.
+ *
+ * La hoja se monta antes que el campo: es quien guarda cómo se abre, y el campo la
+ * abre en cuanto se envía una intención.
+ */
+mountBegin({ openDock: () => { dock.open(); } });
+mountEntry();
 
 /**
  * Cierre del viaje de OAuth. La página se ha recargado por completo desde que

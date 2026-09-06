@@ -39,6 +39,23 @@ export function stopAsking(): void {
 }
 
 /**
+ * Lo que hay en la hoja **ahora**, cuando hay un editor abierto.
+ *
+ * Sin esto el asistente leería de Notion, y lo que hay en Notion es lo de hace un
+ * segundo y medio: la persona pregunta por el párrafo que acaba de escribir y el
+ * modelo contesta sobre un documento donde ese párrafo no está. Se pide por id de
+ * página para no confundir un editor abierto en otra con la que se está mirando.
+ *
+ * Es la misma costura que el resto de la plataforma —una función que se deja puesta,
+ * no un import cruzado— para que `conversation.ts` no dependa de la interfaz.
+ */
+let liveDocument: ((pageId: string) => string | null) | null = null;
+
+export function setLiveDocument(read: ((pageId: string) => string | null) | null): void {
+  liveDocument = read;
+}
+
+/**
  * Lo que el asistente puede ver: la intención declarada y, si hay una página
  * abierta, su nombre y su texto. Si Notion no contesta se pregunta sin el texto
  * en vez de no preguntar.
@@ -51,6 +68,13 @@ export async function gatherContext(signal?: AbortSignal): Promise<AssistantCont
 
   context.pageName = page.name;
   context.projectName = page.projectName ?? null;
+
+  // Si el editor lo tiene abierto, lo que se ve es la verdad y no hace falta pedirlo.
+  const live = liveDocument?.(page.id);
+  if (typeof live === "string") {
+    context.pageContent = live;
+    return context;
+  }
 
   const token = session.get()?.token;
   if (!token) return context;

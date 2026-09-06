@@ -47,6 +47,20 @@ interface Pop {
   fill?: () => void;
 }
 
+/**
+ * Abrir los ajustes de IA desde fuera de la bandeja.
+ *
+ * La ventana del asistente ya no los lleva dentro —se pidió quitar ese botón de su
+ * cabecera, porque estaban en dos sitios— pero su pie sí tiene que poder llevar
+ * hasta aquí cuando falta la credencial. La bandeja se monta una vez, así que basta
+ * con guardar cómo se abre la suya.
+ */
+let openAi: (() => void) | null = null;
+
+export function openAiSettings(): void {
+  openAi?.();
+}
+
 export function mountTray(options: TrayOptions): Tray {
   const root = el("div", { class: "tray" });
   const pops: Pop[] = [];
@@ -288,9 +302,11 @@ export function mountTray(options: TrayOptions): Tray {
     mountAiSettings(ai.body);
   };
 
+  openAi = () => { if (open !== ai) toggle(ai); };
+
   /* --- cómo se ve la plataforma -------------------------------------------- */
 
-  const sys = make("tray-system", "Ajustes del sistema", icon("sliders"));
+  const sys = make("tray-system", "Ajustes del sistema", icon("tune"));
 
   const CHOICES: readonly { id: ThemeChoice; label: string }[] = [
     { id: "light", label: "Claro" },

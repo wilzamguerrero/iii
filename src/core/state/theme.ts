@@ -3,6 +3,11 @@ import { createStore } from "../store.ts";
 /**
  * Claro u oscuro, y la tercera opción: la que diga el sistema.
  *
+ * Sin nada guardado se queda en **claro**, no en «automático»: la plataforma se
+ * diseñó blanca y así es como tiene que aparecer la primera vez, aunque el
+ * sistema de quien entra esté en oscuro. «Automático» sigue estando, pero se
+ * elige.
+ *
  * Se guarda porque es una preferencia y no un estado de la sesión: quien elige
  * oscuro lo elige para siempre, no para este rato. Lo que se guarda es la
  * elección —`auto` incluida— y no el resultado de resolverla, para que quien
@@ -28,8 +33,8 @@ function recall(): ThemeChoice {
   try {
     const raw = localStorage.getItem(KEY);
     if (raw === "light" || raw === "dark" || raw === "auto") return raw;
-  } catch { /* modo privado: se queda en automático */ }
-  return "auto";
+  } catch { /* modo privado: se queda en claro */ }
+  return "light";
 }
 
 const dark = matchMedia("(prefers-color-scheme: dark)");

@@ -1,0 +1,253 @@
+/* ============================================================
+   La hoja de arranque: de la intención al proyecto.
+
+   Es lo único modal de la plataforma. Todo lo demás —la franja,
+   la ventana del asistente, las ventanitas de la bandeja— deja
+   la página viva detrás, porque son sitios a los que se va y de
+   los que se vuelve. Esto no: es un paso, tiene principio y fin,
+   y mientras dura no hay otra cosa que hacer.
+
+   Sale de la pantalla de entrada, que no es un panel del que
+   pueda colgar, así que cuelga del <body>: el velo en z 13 y la
+   hoja en 14, por encima del menú de una baldosa (12).
+
+   El objeto es el mismo de siempre —papel, 1 px de borde,
+   `--r-panel`, `--shadow`—; lo único suyo es el velo.
+   ============================================================ */
+
+.begin {
+  position: fixed;
+  inset: 0;
+  z-index: 13;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(1rem, 4vh, 2.5rem) 1rem;
+  background: var(--veil);
+  animation: begin-veil 0.28s ease both;
+}
+
+/* `display: flex` gana a `[hidden]`: sin esto la hoja no se cierra. */
+.begin[hidden] { display: none !important; }
+
+@keyframes begin-veil {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.begin__sheet {
+  position: relative;
+  z-index: 14;
+  width: min(38rem, 100%);
+  max-height: min(88vh, 44rem);
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  border: 1px solid var(--ink-line);
+  border-radius: var(--r-panel);
+  box-shadow: var(--shadow);
+  animation: begin-in 0.42s var(--out-expo) both;
+}
+
+/* Sube al aparecer, como la franja: lo que llega, llega desde abajo. */
+@keyframes begin-in {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.begin__head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.7rem 0.7rem 0.7rem 1.1rem;
+  border-bottom: 1px solid var(--ink-line);
+}
+
+.begin__title {
+  margin: 0;
+  font-size: 0.68rem;
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.begin__x {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border: 0;
+  border-radius: var(--r-panel);
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: color 0.2s ease, background-color 0.2s ease;
+}
+
+.begin__x:hover { color: var(--ink); background: var(--wash); }
+.begin__x:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: 1px; }
+
+.begin__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.15rem 1.1rem 1.3rem;
+}
+
+/* --- la intención, citada ------------------------------------------------- */
+
+/* En serif e itálica: es lo que escribió la persona, no texto de la interfaz. La
+   misma distinción que hace `.pnl__lead em` y el título de la entrada. */
+.begin__quote {
+  margin: 0;
+  padding-left: 0.85rem;
+  border-left: 1px solid var(--ink-line);
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 1.05rem;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+/* --- el nombre ------------------------------------------------------------ */
+
+.begin__label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.begin__label__txt {
+  font-size: 0.66rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/* --- lo que propone el modelo -------------------------------------------- */
+
+.begin__ai {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+/* La lectura del modelo sobre la intención: una frase, sobre fondo de gesto para
+   que no se confunda con las preguntas ni con el texto de la interfaz. */
+.begin__note {
+  margin: 0;
+  padding: 0.6rem 0.7rem;
+  border-radius: var(--r-panel);
+  background: var(--wash);
+  font-size: 0.8rem;
+  font-weight: 300;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.begin__phase {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.begin__phase__name {
+  margin: 0;
+  font-size: 0.68rem;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.begin__qs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+/* La raya no es una viñeta: son preguntas, y una raya las lee como réplicas. */
+.begin__q {
+  position: relative;
+  padding-left: 1rem;
+  font-size: 0.84rem;
+  font-weight: 300;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.begin__q::before {
+  content: "—";
+  position: absolute;
+  left: 0;
+  color: var(--ink-faint);
+}
+
+/* --- mientras se escribe en Notion ---------------------------------------- */
+
+/* Cuatro escrituras: la carpeta y un documento por fase. La barra existe porque
+   son varios segundos y en blanco parecería colgado. */
+.begin__bar {
+  height: 2px;
+  background: var(--ink-line);
+  border-radius: 1px;
+  overflow: hidden;
+}
+
+.begin__bar__fill {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--ink);
+  transition: width 0.5s var(--out-expo);
+}
+
+/* --- lo que quedó hecho --------------------------------------------------- */
+
+.begin__made {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.begin__made__one {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.86rem;
+  font-weight: 300;
+  color: var(--ink);
+}
+
+.begin__made__one .ico { color: var(--ink-faint); }
+
+/* --- en un teléfono ------------------------------------------------------- */
+
+@media (max-width: 620px) {
+  .begin { padding: 0.75rem; align-items: flex-end; }
+
+  .begin__sheet { max-height: 92vh; }
+
+  .begin__quote { font-size: 0.98rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .begin,
+  .begin__sheet { animation: none; }
+
+  .begin__bar__fill { transition: none; }
+}
