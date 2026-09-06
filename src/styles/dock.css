@@ -26,6 +26,13 @@
   /* Dentro no hace falta el margen de una franja a sangre: el panel ya está
      separado de los bordes de la página. */
   --dock-pad: clamp(0.9rem, 2.4vw, 1.6rem);
+  /* El filo abierto mide lo que mide su contenido; con un mínimo fijo la
+     altura total se puede decir en un valor que otros conozcan —la hoja se
+     apoya sobre él— sin medir nada en el navegador. El real es menor o igual,
+     así que nada se cuela por debajo. */
+  --dock-strip: 2.8rem;
+  /* La franja abierta de arriba a abajo: el cuerpo y el filo. */
+  --dock-full: calc(var(--dock-h) + var(--dock-strip));
 }
 
 .dock {
@@ -69,6 +76,7 @@
   display: flex;
   align-items: stretch;
   min-width: 0;
+  min-height: var(--dock-strip);
   padding-inline: 0.4rem;
 }
 
@@ -429,7 +437,9 @@
 .crumb--now { color: var(--ink); cursor: default; }
 .crumb--now::after { transform: scaleX(1); }
 
-/* Crear no es un sitio al que ir: mismo tamaño, más ligero y sin la línea. */
+/* Crear no es un sitio al que ir: mismo tamaño, más ligero y sin la línea.
+   `nowrap` porque un «Nueva página» partido a mitad de palabra se lee cortado
+   cuando la fila del camino ya no tiene sitio. */
 .crumb__act {
   flex: 0 0 auto;
   border: 0;
@@ -438,9 +448,10 @@
   color: var(--ink-soft);
   font-family: inherit;
   font-size: 0.68rem;
-  font-weight: 300;
+  font-weight: 400;
   letter-spacing: 0.1em;
   text-transform: uppercase;
+  white-space: nowrap;
   cursor: pointer;
   transition: color 0.2s ease;
 }
@@ -517,7 +528,8 @@ body[data-dock="open"] .menu {
   .dock,
   .dock__chev,
   .crumb::after,
-  body[data-dock="open"] .menu { transition-duration: 0.01ms; }
+  body[data-dock="open"] .menu,
+  .wr { transition-duration: 0.01ms; }
   .dock.is-in { animation: none; }
 }
 
@@ -539,7 +551,7 @@ body[data-dock="open"] .menu {
 .pnl__lead {
   margin: 0;
   font-size: 0.95rem;
-  font-weight: 300;
+  font-weight: 400;
   line-height: 1.55;
   color: var(--ink);
 }
@@ -713,7 +725,7 @@ body[data-dock="open"] .menu {
 .msg {
   margin: 0;
   font-size: 0.78rem;
-  font-weight: 300;
+  font-weight: 400;
   line-height: 1.55;
   color: var(--ink-soft);
 }
@@ -753,7 +765,7 @@ body[data-dock="open"] .menu {
   color: var(--ink);
   font: inherit;
   font-size: 0.78rem;
-  font-weight: 300;
+  font-weight: 400;
   padding: 0.85rem 0.45rem 0.7rem;
   cursor: pointer;
   transition: background-color 0.2s ease, border-color 0.2s ease;
@@ -845,7 +857,7 @@ body[data-dock="open"] .menu {
   padding: 0.5rem 0.2rem;
   color: var(--ink-soft);
   font-size: 0.78rem;
-  font-weight: 300;
+  font-weight: 400;
 }
 
 /* --- el árbol ------------------------------------------------------------- */
@@ -868,8 +880,8 @@ body[data-dock="open"] .menu {
   padding-right: 0.35rem;
   border-radius: var(--r-panel);
   color: var(--ink-soft);
-  font-size: 0.76rem;
-  font-weight: 300;
+  font-size: 0.8rem;
+  font-weight: 400;
   line-height: 1.3;
   cursor: pointer;
   transition: background-color 0.18s ease, color 0.18s ease;
@@ -923,7 +935,7 @@ body[data-dock="open"] .menu {
   padding: 0.24rem 0.35rem 0.24rem 1.55rem;
   color: var(--ink-faint);
   font-size: 0.72rem;
-  font-weight: 300;
+  font-weight: 400;
 }
 
 @media (prefers-reduced-motion: reduce) {

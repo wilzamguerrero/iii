@@ -24,9 +24,23 @@
   background: var(--paper);
   color: var(--ink);
   font-family: var(--sans);
+  transition: bottom 0.62s var(--out-expo);
 }
 
 .wr[hidden] { display: none !important; }
+
+/* Con la franja abierta la hoja no se esconde debajo: se levanta y se apoya
+   sobre ella, para que el espacio de escritura nunca quede cortado. Va con la
+   curva propia de la franja para que los dos no se descosen. `--dock-full`
+   vive en `dock.css`, donde se mide la franja. */
+body[data-dock="open"] .wr { bottom: var(--dock-full); }
+
+/* El aviso no genera caja cuando está `hidden`, y el colado automático deja
+   entonces el cuerpo en la fila `auto` —del alto que mida su contenido— con la
+   fila de `1fr` vacía debajo: la hoja arriba y aire hasta abajo. La fila se fija
+   a mano para que el aviso venga o no. */
+.wr__note { grid-row: 2; }
+.wr__body { grid-row: 3; }
 
 /* Con el documento abierto la página de detrás no se desplaza: lo que se
    desplaza es la hoja, y dos barras de desplazamiento a la vez desorientan. */
@@ -193,12 +207,22 @@ body.is-writing { overflow: hidden; }
 /* --- la hoja ------------------------------------------------------------- */
 
 /* `min-width: 0` para que el campo no imponga su ancho y las dos columnas de
-   los lados puedan conservar el suyo. */
+   los lados puedan conservar el suyo.
+
+   La fila es explícita por lo que cabe: sin `grid-template-rows` la implícita
+   mide `auto`, un `height: 100%` dentro de una fila auto se resuelve a `auto` y
+   la hoja quedaba como una caja pequeña arriba —el texto cortado abajo con
+   mucho aire debajo—. Con `minmax(0, 1fr)` la única fila mide toda la altura:
+   lo que esté a la vista —el campo escribiendo o el documento leído; lo
+   `hidden` no participa del colado— siempre cae en ella, y el `minmax(0, …)`
+   le deja encogerse, de modo que el desplazamiento lo haga el propio elemento. */
 .wr__paper {
   position: relative;
   flex: 1 1 auto;
   min-width: 0;
+  min-height: 0;
   display: grid;
+  grid-template-rows: minmax(0, 1fr);
 }
 
 /* La columna de texto se centra con el propio relleno del campo, no con un
