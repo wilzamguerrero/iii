@@ -18,8 +18,16 @@ import { available, dictation, type Dictation } from "../../core/voice/dictate.t
 
 export type Field = HTMLInputElement | HTMLTextAreaElement;
 
+/**
+ * Dónde cae lo dictado. Un campo de formulario, o un editor de documento: el
+ * micrófono es el mismo gesto en los dos, y el editor visual no es un campo.
+ */
+export type Sink =
+  | Field
+  | { dictate(said: string): void; root: HTMLElement };
+
 export interface MicOptions {
-  field: Field;
+  field: Sink;
   /** Para colgar el botón de otra rejilla: la del asistente, la del documento. */
   className?: string;
   /** Se llama tras insertar, con el campo ya cambiado. */
@@ -97,7 +105,9 @@ export function mountMic(options: MicOptions): Mic | null {
 
     voice = dictation({
       onText: (said) => {
-        insert(options.field, said);
+        const field = options.field;
+        if ("dictate" in field) field.dictate(said);
+        else insert(field, said);
         options.changed?.();
       },
       onStop: (reason) => {
@@ -112,7 +122,10 @@ export function mountMic(options: MicOptions): Mic | null {
     if (!voice) return;
     voice.start();
     paint(true);
-    options.field.focus();
+    // El foco vuelve a donde va a caer lo dicho: al campo, o al documento.
+    const field = options.field;
+    if ("dictate" in field) field.root.focus();
+    else field.focus();
   });
 
   return { button, stop };

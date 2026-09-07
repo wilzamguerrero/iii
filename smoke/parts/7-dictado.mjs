@@ -122,25 +122,23 @@ await cdp.evaluate(`(async () => {
 })()`);
 await wait(1200);
 const doc = await cdp.evaluate(`(() => {
-  const area = document.querySelector(".wr__edit");
-  // Se pone a leer para ver lo que hace el microfono: dictar sobre un documento
-  // que no se ve seria hablarle a una pared.
-  document.querySelector(".wr__act--mode").click();
-  const reading = area.hidden;
+  const vis = document.querySelector(".vis");
+  vis.focus();
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  const range = document.createRange();
+  range.selectNodeContents(vis);
+  range.collapse(false);
+  sel.addRange(range);
   document.querySelector(".wr__mic").click();
-  area.setSelectionRange(area.value.length, area.value.length);
   window.__say("Se pierde quien llega por urgencias");
   return {
     there: !!document.querySelector(".wr__mic"),
-    reading,
-    writing: !area.hidden,
-    tail: area.value.slice(-40),
+    tail: vis.textContent.slice(-40),
     state: document.querySelector(".wr__state").textContent,
   };
 })()`);
 say(doc.there === true, "el documento tambien se puede dictar");
-say(doc.reading === true && doc.writing === true, "y al dictar pasa de leer a escribir",
-  `leyendo=${doc.reading} escribiendo=${doc.writing}`);
 say(doc.tail.indexOf("Se pierde quien llega por urgencias") >= 0, "lo dicho se escribe en la hoja", doc.tail);
 
 await wait(2200);

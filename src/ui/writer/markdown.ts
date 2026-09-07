@@ -88,7 +88,7 @@ function safeHref(url: string, image = false): string | null {
 /** Una imagen en su propia línea: `![alt](https://…)`. */
 const IMAGE = /^!\[([^\]]*)\]\(([^)\s]+)\)$/;
 
-function inline(text: string): Node[] {
+export function inline(text: string): Node[] {
   const out: Node[] = [];
   let at = 0;
 

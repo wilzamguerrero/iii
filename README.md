@@ -91,7 +91,7 @@ igual medio segundo despuÃ©s de la pasada.
 | `src/ui/drag.ts`        | arrastrar, recordar dÃ³nde se dejÃ³ y no salirse de la pantalla |
 | `src/ui/dock/`          | la franja: `dock` (el filo), `tabs`, `tray`, `workspace`, `folders`, `tree`, `menu` |
 | `src/ui/start/`         | de la intenciÃ³n al proyecto: `entry`, `begin`, `open`          |
-| `src/ui/writer/`        | la hoja: `writer`, `markdown`, `outline`, `panel`, `save`, `structure`, `contextai` (el menú de la IA al clic derecho) |
+| `src/ui/writer/`        | la hoja: `writer`, `visual` (el editor de un solo modo), `slash` (el menú «/»), `markdown`, `outline`, `panel`, `save`, `structure`, `contextai` (el menú de la IA al clic derecho) |
 | `src/ui/voice/`         | el botÃ³n de dictar y dÃ³nde cae lo dicho                       |
 | `src/ui/assistant/`     | el tirador y la ventana de conversaciÃ³n                       |
 | `src/main.js`           | ajustes, lÃ­nea de tiempo, paso a menÃº, eventos               |
@@ -349,13 +349,15 @@ que se estÃ¡ haciendo cuando se estÃ¡ haciendo. Va **por debajo de la franja
 asistente**: la franja se abre encima para ir a otro documento y el aviÃ³n se puede dejar
 sobre el papel, que es para lo que se hizo movible.
 
-**Dos modos, un solo texto.** Escribiendo se ve Markdown, que es lo que se guarda;
-leyendo se ve el documento compuesto, que es lo que hay que juzgar. No hay un tercer
-estado con la mitad de cada cosa: un editor que compone mientras escribes obliga a
-pelearse con lo que Ã©l cree que querÃ­as, y aquÃ­ el texto es de quien escribe (`plan.md`
-Â§12 D7 cuenta por quÃ© no es tiptap). La vista de lectura se arma a nodos y nunca con
-`innerHTML`: el texto viene de Notion, de un modelo y de la persona, y los tres son
-entrada.
+**Un solo modo: escribir y leer a la vez.** La hoja es el documento compuesto
+—títulos, listas, citas, imágenes tal como se leen— y se escribe directamente
+sobre él, como en Notion. El Markdown sigue siendo cómo viaja el texto —al
+guardado, a Notion, al asistente— pero ya no es un modo en el que estar: el
+botón «Leer/Escribir» desapareció. La tecla **«/»** en un bloque vacío abre el
+menú de bloques —título, apartado, subapartado, texto, lista, lista numerada,
+cita, separador, código, imagen— con las flechas y Enter. El texto se arma a
+nodos y nunca con `innerHTML`: el texto viene de Notion, de un modelo y de la
+persona, y los tres son entrada.
 
 A la izquierda, los **apartados**, sacados de los propios tÃ­tulos de Markdown â€”asÃ­ no hay
 nada que mantener en paralelo ni que se pueda desincronizarâ€” y pulsar uno lleva hasta Ã©l

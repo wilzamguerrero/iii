@@ -52,10 +52,12 @@ say(sees.indexOf("intenci") > 0 && sees.indexOf("Indagar") > 0, "al abrir un doc
 
 /* --- lo que ve es lo escrito, no lo guardado --------------------------- */
 await cdp.evaluate(`(() => {
-  const area = document.querySelector(".wr__edit");
-  area.focus();
-  area.value = area.value + String.fromCharCode(10, 10) + "Esto acabo de escribirlo y no esta en Notion.";
-  area.dispatchEvent(new Event("input", { bubbles: true }));
+  const vis = document.querySelector(".vis");
+  vis.focus();
+  const para = document.createElement("p");
+  para.textContent = "Esto acabo de escribirlo y no esta en Notion.";
+  vis.appendChild(para);
+  vis.dispatchEvent(new Event("input", { bubbles: true }));
 })()`);
 await wait(200);
 await cdp.evaluate(`(() => {
@@ -110,12 +112,17 @@ say(JSON.stringify(acts.acts) === JSON.stringify(["Copiar", "Añadir al document
 /* anadir la respuesta al documento la pega donde este el cursor */
 const added = await cdp.evaluate(`(() => {
   const btn = document.querySelector(".ai-turn--answer .ai-turn__acts .lnkbtn:last-child");
-  const area = document.querySelector(".wr__edit");
-  const before = area.value.length;
-  area.focus();
-  area.setSelectionRange(area.value.length, area.value.length);
+  const vis = document.querySelector(".vis");
+  const before = vis.textContent.length;
+  vis.focus();
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  const range = document.createRange();
+  range.selectNodeContents(vis);
+  range.collapse(false);
+  sel.addRange(range);
   btn.click();
-  return { before, after: area.value.length, tail: area.value.slice(-120) };
+  return { before, after: vis.textContent.length, tail: vis.textContent.slice(-120) };
 })()`);
 say(added.after > added.before, "anadir entra en el documento abierto", `${added.before} -> ${added.after}`);
 say(added.tail.indexOf("Que decide una persona al salir del ascensor") >= 0, "con la respuesta dentro", added.tail.slice(0, 40));

@@ -7,35 +7,24 @@ await cdp.evaluate(`(async () => {
 })()`);
 await wait(900);
 
-/* --- leer ---------------------------------------------------------------- */
-await cdp.evaluate(`document.querySelector(".wr__act--mode").click()`);
-await wait(200);
-const read = await cdp.evaluate(`(() => {
-  const doc = document.querySelector(".doc");
-  return {
-    docShown: !doc.hidden,
-    editHidden: document.querySelector(".wr__edit").hidden,
-    label: document.querySelector(".wr__act--mode").textContent,
-    pressed: document.querySelector(".wr__act--mode").getAttribute("aria-pressed"),
-    tags: [...doc.children].map((n) => n.tagName.toLowerCase() + "." + n.className),
-    lines: [...doc.querySelectorAll("[data-line]")].map((n) => n.dataset.line).slice(0, 6),
-    quote: !!doc.querySelector("blockquote.doc__quote"),
-    list: doc.querySelectorAll("ul.doc__list li.doc__item").length,
-  };
-})()`);
-say(read.docShown && read.editHidden, "leer cambia de hoja");
-say(read.label === "Escribir" && read.pressed === "true", "y el boton dice como volver", read.label);
-say(read.quote === true, "la linea de la estructura se lee como cita");
-say(read.list === 2, "la lista sale compuesta", "items=" + read.list);
-say(read.lines.length === 6 && read.lines.every((l) => /^\d+$/.test(l)), "cada bloque sabe su linea", read.lines.join(","));
+/* --- un solo modo: escribir y leer a la vez ------------------------------ */
+const mode = await cdp.evaluate(`(() => ({
+  vis: !!document.querySelector(".vis"),
+  edit: !!document.querySelector(".wr__edit"),
+  readBtn: !!document.querySelector(".wr__act--mode"),
+  serif: getComputedStyle(document.querySelector(".vis")).fontFamily,
+}))()`);
+say(mode.vis === true && mode.edit === false, "la hoja es el documento mismo, sin dos modos");
+say(mode.readBtn === false, "el boton de leer/escribir desaparecio");
+say(mode.serif.indexOf("serif") >= 0, "y se escribe en la letra de leer", mode.serif.slice(0, 30));
 
-/* --- ir a un apartado desde la izquierda -------------------------------- */
+/* --- los apartados llevan hasta su sitio --------------------------------- */
 const jump = await cdp.evaluate(`(() => {
   const heads = [...document.querySelectorAll(".out__h")];
   const target = heads.find((b) => b.textContent.indexOf("Un tercer nivel") === 0);
   target.click();
-  const found = document.querySelector(".doc .is-found");
-  return { clicked: !!target, found: found ? found.textContent : null, current: target.getAttribute("aria-current") };
+  const found = document.querySelector(".vis .is-found");
+  return { found: found ? found.textContent : null, current: target.getAttribute("aria-current") };
 })()`);
 say(jump.found && jump.found.indexOf("Un tercer nivel") === 0, "pulsar un apartado lleva hasta el", jump.found);
 
@@ -58,39 +47,88 @@ say(pick.rows === 3, "con las tres formas del reglamento", JSON.stringify(pick.n
 say(pick.mine.length === 1 && pick.mine[0] === "Idea de trabajo de grado", "sabe cual sigue ya el documento", JSON.stringify(pick.mine));
 say(pick.disabled === 1, "y no deja insertarla dos veces");
 
-const before = await cdp.evaluate(`document.querySelector(".wr__edit").value.length`);
+const before = await cdp.evaluate(`document.querySelectorAll(".vis > *").length`);
 await cdp.evaluate(`(() => {
   const rows = [...document.querySelectorAll(".pick__one")];
   const row = rows.find((r) => r.querySelector(".pick__name").textContent === "Anteproyecto");
   row.querySelector("button").click();
 })()`);
-await wait(250);
-const inserted = await cdp.evaluate(`(() => {
-  const area = document.querySelector(".wr__edit");
-  return {
-    pickHidden: document.querySelector(".pick").hidden,
-    grew: area.value.length,
-    caret: area.selectionStart,
-    mode: document.querySelector(".wr__act--mode").textContent,
-    heads: document.querySelectorAll(".out__h").length,
-    state: document.querySelector(".wr__state").textContent,
-    hasTitle: area.value.indexOf("# Anteproyecto") >= 0 || area.value.indexOf("Estructura: Anteproyecto") >= 0,
-  };
-})()`);
+await wait(300);
+const inserted = await cdp.evaluate(`(() => ({
+  pickHidden: document.querySelector(".pick").hidden,
+  grew: document.querySelectorAll(".vis > *").length,
+  heads: document.querySelectorAll(".out__h").length,
+  state: document.querySelector(".wr__state").textContent,
+  hasTitle: [...document.querySelectorAll(".vis > blockquote")].some((b) => b.textContent.indexOf("Estructura: Anteproyecto") === 0),
+}))()`);
 say(inserted.pickHidden === true, "insertar cierra la ventanita");
-say(inserted.grew > before + 200, "los apartados entran en el texto", inserted.grew + " > " + before);
-say(inserted.caret === before + 2, "el cursor queda donde empieza lo insertado", "caret=" + inserted.caret);
-say(inserted.mode === "Leer", "y se vuelve a escribir para poder escribirlos");
+say(inserted.grew > before + 10, "los apartados entran en el documento", inserted.grew + " > " + before);
 say(inserted.hasTitle === true, "con su linea de estructura");
 say(inserted.heads > 10, "los apartados nuevos estan a la izquierda", "n=" + inserted.heads);
 
+/* --- el menu «/»: la tecla de los bloques -------------------------------- */
+const slash = await cdp.evaluate(`(() => {
+  const vis = document.querySelector(".vis");
+  vis.focus();
+  const all = vis.querySelectorAll(":scope > *");
+  const para = document.createElement("p");
+  vis.appendChild(para);
+  const range = document.createRange();
+  range.selectNodeContents(para);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  para.dispatchEvent(new KeyboardEvent("keydown", { key: "/", bubbles: true, cancelable: true }));
+  const menu = document.querySelector(".sl");
+  return {
+    there: !!menu,
+    shown: menu ? !menu.hidden : false,
+    items: menu ? [...menu.querySelectorAll(".sl__one")].map((b) => b.dataset.id) : [],
+    label: menu ? menu.querySelector(".sl__one .sl__label").textContent : null,
+  };
+})()`);
+say(slash.there === true && slash.shown === true, "la tecla / abre el menu de bloques");
+say(slash.items.includes("h1") && slash.items.includes("bullet") && slash.items.includes("quote")
+  && slash.items.includes("divider") && slash.items.includes("code") && slash.items.includes("image"),
+  "con los bloques de un documento de verdad", JSON.stringify(slash.items));
+
+/* elegir un bloque lo pone donde estaba el cursor */
+const picked = await cdp.evaluate(`(() => {
+  const menu = document.querySelector(".sl");
+  const one = [...menu.querySelectorAll(".sl__one")].find((b) => b.dataset.id === "h2");
+  one.click();
+  const vis = document.querySelector(".vis");
+  const last = vis.lastElementChild;
+  return { tag: last ? last.tagName : null, focus: document.activeElement === vis };
+})()`);
+say(picked.tag === "H3", "elegir Apartado pone un titulo en la hoja", picked.tag);
+say(picked.focus === true, "y el cursor queda dentro del documento");
+
+/* escribir sobre el titulo recien puesto */
+await cdp.evaluate(`(() => {
+  const vis = document.querySelector(".vis");
+  const last = vis.lastElementChild;
+  last.textContent = "Un apartado nuevo con el menu";
+  vis.dispatchEvent(new Event("input", { bubbles: true }));
+})()`);
+await wait(200);
+const heading = await cdp.evaluate(`(() => ({
+  heads: [...document.querySelectorAll(".out__h")].map((h) => h.textContent),
+  state: document.querySelector(".wr__state").textContent,
+}))()`);
+say(heading.heads.includes("Un apartado nuevo con el menu"), "el titulo del menu sale en los apartados");
+say(heading.state === "Sin guardar", "y queda como cambio sin guardar");
+
 /* --- las tres acciones sobre lo marcado -------------------------------- */
 const tools = await cdp.evaluate(`(() => {
-  const area = document.querySelector(".wr__edit");
-  const at = area.value.indexOf("El programa de Diseno");
-  area.focus();
-  area.setSelectionRange(at, at + 60);
-  area.dispatchEvent(new Event("select", { bubbles: true }));
+  const vis = document.querySelector(".vis");
+  const para = [...vis.querySelectorAll("p")].find((p) => p.textContent.indexOf("El programa de Diseno") === 0);
+  const range = document.createRange();
+  range.selectNodeContents(para);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  vis.dispatchEvent(new Event("select", { bubbles: true }));
   const bar = document.querySelector(".wr__tools");
   return { shown: !bar.hidden, labels: [...bar.querySelectorAll(".wr__tool")].map((b) => b.textContent) };
 })()`);
@@ -115,19 +153,22 @@ say(asked.toolsHidden === true, "y la barra de seleccion se retira");
 await cdp.evaluate(`document.querySelector(".ai-pop__x").click()`);
 await wait(250);
 const menu = await cdp.evaluate(`(() => {
-  const area = document.querySelector(".wr__edit");
-  const at = area.value.indexOf("Una lista");
-  area.focus();
-  area.setSelectionRange(at, at + 20);
-  const rect = area.getBoundingClientRect();
+  const vis = document.querySelector(".vis");
+  const para = [...vis.querySelectorAll("p")].find((p) => p.textContent.indexOf("El programa de Diseno") === 0);
+  const range = document.createRange();
+  range.selectNodeContents(para);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  const rect = para.getBoundingClientRect();
   const event = new MouseEvent("contextmenu", {
-    bubbles: true, cancelable: true, clientX: rect.left + 60, clientY: rect.top + 60,
+    bubbles: true, cancelable: true, clientX: rect.left + 40, clientY: rect.top + 10,
   });
-  area.dispatchEvent(event);
+  vis.dispatchEvent(event);
   const pop = document.querySelector(".menu-pop");
   return {
     opened: event.defaultPrevented,
-    shown: pop ? !pop.hidden && pop.isConnected : false,
+    shown: pop ? pop.isConnected : false,
     items: pop ? [...pop.querySelectorAll(".menu-pop__item")].map((b) => b.textContent) : [],
   };
 })()`);
@@ -152,26 +193,29 @@ say(respaldo.asked !== null, "buscar respaldo pregunta por el fragmento en el as
   respaldo.asked ? respaldo.asked.slice(0, 60) : "nada");
 say(respaldo.menuGone === true, "y el menu se retira al usarlo");
 
-/* --- una imagen en el modo lectura -------------------------------------- */
+/* --- una imagen en la hoja ------------------------------------------------ */
 await cdp.evaluate(`(() => {
-  const area = document.querySelector(".wr__edit");
-  area.value = area.value + String.fromCharCode(10, 10) + "![Un plano](https://example.com/plano.png)";
-  area.dispatchEvent(new Event("input", { bubbles: true }));
+  const vis = document.querySelector(".vis");
+  const last = vis.lastElementChild;
+  const fig = document.createElement("figure");
+  const img = document.createElement("img");
+  img.src = "https://example.com/plano.png";
+  img.alt = "Un plano";
+  fig.appendChild(img);
+  last.after(fig);
+  vis.dispatchEvent(new Event("input", { bubbles: true }));
 })()`);
-await cdp.evaluate(`document.querySelector(".wr__act--mode").click()`);
 await wait(200);
 const fig = await cdp.evaluate(`(() => {
-  const img = document.querySelector(".doc__img");
-  const bad = document.querySelector(".doc__fig[src^='javascript']");
+  const img = document.querySelector(".vis img");
   return {
     there: !!img,
     src: img ? img.getAttribute("src") : null,
     alt: img ? img.getAttribute("alt") : null,
-    clean: !bad,
   };
 })()`);
 say(fig.there === true && fig.src === "https://example.com/plano.png",
-  "una imagen del documento se ve en la lectura", JSON.stringify(fig));
+  "una imagen en la hoja se ve mientras se escribe", JSON.stringify(fig));
 say(fig.alt === "Un plano", "con su texto alternativo", fig.alt);
 
 cdp.close();

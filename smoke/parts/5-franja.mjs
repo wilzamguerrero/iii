@@ -79,16 +79,17 @@ await cdp.evaluate(`(() => {
 await wait(1100);
 const writing = await cdp.evaluate(`(() => {
   const wr = document.querySelector(".wr");
+  const vis = document.querySelector(".vis");
   return {
     open: wr ? !wr.hidden : false,
     crumb: document.querySelector(".wr__crumb") ? document.querySelector(".wr__crumb").textContent : null,
-    value: document.querySelector(".wr__edit").value,
+    value: vis ? vis.textContent : "",
     state: document.querySelector(".wr__state").textContent,
   };
 })()`);
 say(writing.open === true, "pulsar un documento del arbol lo abre");
 say(writing.crumb === "Senaletica del hospital·Idear", "con su proyecto delante", writing.crumb);
-say(writing.value.indexOf("Idear") === 0 || writing.value.indexOf("#") === 0,
+say(writing.value.indexOf("Idear") >= 0,
   "y con su texto dentro", JSON.stringify(writing.value.slice(0, 24)));
 
 /* --- botones cuadrados como los paneles -------------------------------- */

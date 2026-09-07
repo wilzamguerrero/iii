@@ -78,10 +78,11 @@ say(done.noReplace === true, "y la prohibicion de reescribir");
 const led = await cdp.evaluate(`(() => {
   const one = document.querySelector(".rev__card .rev__one");
   if (one) one.click();
-  const area = document.querySelector(".wr__edit");
-  return { picked: area.value.slice(area.selectionStart, area.selectionEnd) };
+  const vis = document.querySelector(".vis");
+  const sel = window.getSelection();
+  return { picked: sel ? String(sel) : "" , has: !!vis };
 })()`);
-say(led.picked === "Naturaleza de la situacion", "pulsar una observacion lleva hasta su sitio", JSON.stringify(led.picked));
+say(led.picked.indexOf("Naturaleza de la situacion") >= 0, "pulsar una observacion lleva hasta su sitio", JSON.stringify(led.picked.slice(0, 40)));
 
 await cdp.evaluate(`(() => {
   const links = [...document.querySelectorAll(".rev__card .lnkbtn")];
@@ -107,10 +108,14 @@ const esc = () => cdp.evaluate(`(() => {
   };
 })()`);
 await cdp.evaluate(`(() => {
-  const area = document.querySelector(".wr__edit");
-  area.focus();
-  area.setSelectionRange(0, 40);
-  area.dispatchEvent(new Event("select", { bubbles: true }));
+  const vis = document.querySelector(".vis");
+  const para = [...vis.querySelectorAll("p")][0];
+  const range = document.createRange();
+  range.selectNodeContents(para);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  vis.dispatchEvent(new Event("select", { bubbles: true }));
   [...document.querySelectorAll(".wr__act")].find((b) => b.textContent === "Estructura").click();
 })()`);
 await wait(200);
@@ -145,9 +150,10 @@ await cdp.evaluate(`(async () => {
 await wait(1000);
 const back = await cdp.evaluate(`(() => {
   const note = document.querySelector(".wr__note");
+  const vis = document.querySelector(".vis");
   return {
     said: note && !note.hidden ? note.textContent : null,
-    value: document.querySelector(".wr__edit").value,
+    value: vis ? vis.textContent : "",
     state: document.querySelector(".wr__state").textContent,
     offer: [...document.querySelectorAll(".wr__note button")].map((b) => b.textContent),
   };

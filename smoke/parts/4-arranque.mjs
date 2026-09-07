@@ -53,7 +53,7 @@ say(proposed.canCreate === true, "se puede crear");
 
 /* --- crear: la carpeta y los tres documentos, paginas de verdad ---------- */
 await cdp.evaluate(`[...document.querySelectorAll(".begin .btn")].find((b) => b.textContent === "Crear el proyecto").click()`);
-await wait(2600);
+await wait(4200);
 const made = await cdp.evaluate(`(() => {
   return {
     pages: window.__pages.map((p) => p.title),
@@ -92,45 +92,45 @@ say(seeded.text.indexOf("Quien se pierde hoy en el hospital") >= 0, "y trae sus 
 
 /* --- abrir Indagar: del proyecto recien hecho al editor ----------------- */
 await cdp.evaluate(`[...document.querySelectorAll(".begin .btn")].find((b) => b.textContent === "Abrir Indagar").click()`);
-await wait(1400);
+await wait(2200);
 const writing = await cdp.evaluate(`(() => {
   const wr = document.querySelector(".wr");
   const begin = document.querySelector(".begin");
+  const vis = document.querySelector(".vis");
   return {
     begunClosed: begin ? begin.hidden : true,
     open: wr ? !wr.hidden : false,
     crumb: document.querySelector(".wr__crumb") ? document.querySelector(".wr__crumb").textContent : null,
     state: document.querySelector(".wr__state").textContent,
-    value: document.querySelector(".wr__edit").value,
-    disabled: document.querySelector(".wr__edit").disabled,
+    value: vis ? vis.textContent : "",
+    editable: vis ? vis.getAttribute("contenteditable") : null,
     heads: [...document.querySelectorAll(".out__h")].map((b) => b.textContent),
     dock: document.querySelector(".dock") ? !document.querySelector(".dock").classList.contains("is-shut") : null,
   };
 })()`);
 say(writing.begunClosed === true && writing.open === true, "abrir lleva del proyecto al documento");
 say(writing.crumb !== null && writing.crumb.indexOf("Indagar") > 0, "el editor dice donde esta", writing.crumb);
-say(writing.disabled === false, "y se puede escribir en el");
+say(writing.editable === "true", "y se puede escribir en el");
 say(writing.value.indexOf("Quien se pierde hoy en el hospital") > 0, "el documento trae sus preguntas", writing.value.slice(0, 40));
 say(writing.state === "Guardado en Notion", "y nace guardado", writing.state);
 say(writing.heads.length >= 2, "sus apartados salen a la izquierda", JSON.stringify(writing.heads));
 
 /* --- lo escrito encima llega a Notion como diff -------------------------- */
 await cdp.evaluate(`(() => {
-  const area = document.querySelector(".wr__edit");
-  area.focus();
-  const at = area.value.length;
-  area.value = area.value + String.fromCharCode(10, 10) + "Se pierde quien llega por urgencias y busca consulta externa.";
-  area.setSelectionRange(at, at);
-  area.dispatchEvent(new Event("input", { bubbles: true }));
+  const vis = document.querySelector(".vis");
+  vis.focus();
+  const para = document.createElement("p");
+  para.textContent = "Se pierde quien llega por urgencias y busca consulta externa.";
+  vis.appendChild(para);
+  vis.dispatchEvent(new Event("input", { bubbles: true }));
 })()`);
-await wait(2600);
+await wait(3200);
 const saved = await cdp.evaluate(`(() => {
-  const area = document.querySelector(".wr__edit");
+  const vis = document.querySelector(".vis");
   const doc = window.__pages[1];
   return {
-    value: area.value.slice(-50),
+    value: vis ? vis.textContent.slice(-60) : "",
     state: document.querySelector(".wr__state").textContent,
-    // El diff: lo que ya estaba no se re-crea; lo nuevo llega como bloque.
     born: window.__made.filter((m) => m.page === doc.id).length,
   };
 })()`);

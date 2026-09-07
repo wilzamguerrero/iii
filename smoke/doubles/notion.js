@@ -161,17 +161,22 @@
   }
 
   /* Lo que hay hoy, para que el editor vea el mismo texto que siempre vio:
-     el markdown se reconstruye de los bloques como lo haria blocksToMarkdown,
-     con la misma marca de id. */
+     el markdown se reconstruye de los bloques como lo haria blocksToMarkdown:
+     un bloque por linea, su marca de id, y una linea vacia entre bloques. */
   function asMarkdown() {
     const out = [];
+    let prev = "";
     for (const block of blocks) {
       const text = richOf(block);
-      if (block.type === "heading_2") out.push("## " + text + " <!--b:" + block.id + "-->");
-      else if (block.type === "heading_3") out.push("### " + text + " <!--b:" + block.id + "-->");
-      else if (block.type === "quote") out.push("> " + text + " <!--b:" + block.id + "-->");
-      else if (block.type === "bulleted_list_item") out.push("- " + text + " <!--b:" + block.id + "-->");
-      else out.push(text + " <!--b:" + block.id + "-->");
+      let line;
+      if (block.type === "heading_2") line = "## " + text + " <!--b:" + block.id + "-->";
+      else if (block.type === "heading_3") line = "### " + text + " <!--b:" + block.id + "-->";
+      else if (block.type === "quote") line = "> " + text + " <!--b:" + block.id + "-->";
+      else if (block.type === "bulleted_list_item") line = "- " + text + " <!--b:" + block.id + "-->";
+      else line = text + " <!--b:" + block.id + "-->";
+      if (prev) out.push("");
+      out.push(line);
+      prev = block.type;
     }
     return out.join(NL);
   }

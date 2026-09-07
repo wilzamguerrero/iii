@@ -15,46 +15,52 @@ await wait(900);
 
 const open = await cdp.evaluate(`(() => {
   const wr = document.querySelector(".wr");
-  const area = document.querySelector(".wr__edit");
+  const vis = document.querySelector(".vis");
   return {
     hidden: wr.hidden,
     crumb: document.querySelector(".wr__crumb").textContent,
     state: document.querySelector(".wr__state").textContent,
     count: document.querySelector(".wr__count").textContent,
-    chars: area.value.length,
-    disabled: area.disabled,
-    heads: [...document.querySelectorAll(".out__h")].map((b) => b.textContent),
-    levels: [...document.querySelectorAll(".out__h")].map((b) => b.className),
+    blocks: vis ? vis.children.length : 0,
+    heads: [...vis.querySelectorAll("h2, h3, h4")].map((h) => h.textContent),
     note: document.querySelector(".wr__note").hidden,
     body: document.body.className,
   };
 })()`);
 say(open.hidden === false, "se abre al elegir una pagina");
 say(open.crumb.includes("Mi proyecto") && open.crumb.includes("Indagar"), "la barra dice proyecto y pagina", open.crumb);
-say(open.chars > 200, "trae el texto de Notion", "chars=" + open.chars);
-say(open.disabled === false, "el campo queda abierto");
+say(open.blocks >= 6, "trae los bloques de Notion compuestos", "n=" + open.blocks);
+say(open.heads.length === 4, "los titulos salen como titulos de verdad", JSON.stringify(open.heads));
 say(open.state === "Guardado en Notion", "dice que esta guardado", open.state);
 say(/\d+ palabras/.test(open.count), "cuenta las palabras", open.count);
-say(open.heads.length === 4, "los apartados salen del texto", JSON.stringify(open.heads));
-say(open.levels.some((c) => c.includes("out__h3")), "con su nivel", JSON.stringify(open.levels));
 say(open.note === true, "sin avisos que no hacen falta");
 say(open.body.includes("is-writing"), "la pagina de detras no se desplaza");
 
 /* Escribir: cuenta, apartados y guardado. */
 await cdp.evaluate(`(() => {
-  const area = document.querySelector(".wr__edit");
-  area.value = area.value + String.fromCharCode(10, 10) + "## Un apartado nuevo" + String.fromCharCode(10, 10) + "Con su parrafo escrito a mano para ver si el guardado se entera.";
-  area.dispatchEvent(new Event("input", { bubbles: true }));
+  const vis = document.querySelector(".vis");
+  vis.focus();
+  const para = document.createElement("p");
+  para.textContent = "Un parrafo escrito a mano para ver si el guardado se entera.";
+  vis.appendChild(para);
+  vis.dispatchEvent(new Event("input", { bubbles: true }));
 })()`);
-await wait(120);
-const typed = await cdp.evaluate("({ state: document.querySelector(\".wr__state\").textContent, heads: document.querySelectorAll(\".out__h\").length })");
+await wait(150);
+const typed = await cdp.evaluate(`(() => ({
+  state: document.querySelector(".wr__state").textContent,
+  heads: document.querySelectorAll(".out__h").length,
+  para: !!document.querySelector(".vis > p:last-child"),
+}))()`);
 say(typed.state === "Sin guardar", "escribir lo marca sin guardar", typed.state);
-say(typed.heads === 5, "y el apartado nuevo aparece a la izquierda", "n=" + typed.heads);
+say(typed.para === true, "lo escrito queda en la hoja");
+say(typed.heads === 4, "y los apartados siguen a la izquierda", "n=" + typed.heads);
 
-await wait(2200);
-const saved = await cdp.evaluate(`({ state: document.querySelector(".wr__state").textContent, saves: window.__saves, last: (window.__saved[window.__saved.length - 1] || "").slice(-40) })`);
-// Con bloques, una salva son uno o dos lotes —según cuántas anclas nuevas
-// haga el diff—, pero nunca una por tecla: eso es lo que se comprueba.
+await wait(2300);
+const saved = await cdp.evaluate(`({
+  state: document.querySelector(".wr__state").textContent,
+  saves: window.__saves,
+  last: (window.__saved[window.__saved.length - 1] || "").slice(-40),
+})`);
 say(saved.saves >= 1 && saved.saves <= 2, "se guarda solo, en una salva", "lotes=" + saved.saves);
 say(saved.state === "Guardado en Notion", "y lo dice", saved.state);
 say(saved.last.includes("guardado se entera."), "con lo escrito dentro", saved.last);

@@ -43,11 +43,12 @@ pasan de una corrida a otra.
 
 1. **Entrada** — el documento se monta cerrado, se abre al elegir una página,
    trae el texto de Notion, cuenta palabras, saca los apartados y se guarda solo.
-2. **Lectura** — leer cambia de hoja, los apartados llevan hasta su sitio, las
-   tres estructuras del reglamento se insertan una sola vez, lo marcado ofrece
-   Cuestionar / Explicar / Precisar, el clic derecho abre el menú de la IA con
-   las acciones de investigación, y una imagen del documento se ve en la
-   vista de lectura.
+2. **Lectura** — la hoja es el documento mismo, sin dos modos; los apartados
+   llevan hasta su sitio, las tres estructuras del reglamento se insertan una
+   sola vez, la tecla «/» abre el menú de bloques y elegir uno lo pone,
+   lo marcado ofrece Cuestionar / Explicar / Precisar, el clic derecho abre
+   el menú de la IA con las acciones de investigación, y una imagen en la
+   hoja se ve mientras se escribe.
 3. **Revisión** — la columna de la derecha: sin credencial lo dice y no gasta una
    petición; con ella marca faltas, respaldos y flojos sobre el texto.
 4. **Arranque** — de la intención al proyecto: la IA propone nombre y preguntas,
