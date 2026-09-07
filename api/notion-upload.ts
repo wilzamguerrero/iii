@@ -137,31 +137,41 @@ const handler: ApiHandler = async (req, res) => {
     }
 
     const contentType = req.headers["content-type"] ?? "";
-    if (!String(contentType).toLowerCase().includes("multipart/form-data")) {
+    const typeText = Array.isArray(contentType) ? contentType[0] ?? "" : String(contentType);
+    if (!typeText.toLowerCase().includes("multipart/form-data")) {
       bad(res, 400, "bad_content_type", "La parte debe llegar como multipart/form-data.");
+      return;
+    }
+
+    // Los bytes de la parte, tal cual vinieron. El `part_number` va dentro del
+    // propio multipart —lo puso el cliente— y el boundary es a la vez cuerpo y
+    // cabecera, así que lo único que hay que hacer es reenviarlos con la
+    // autenticación puesta. Cada entorno cuelga los bytes donde los tiene:
+    // el plugin de desarrollo y Cloudflare en `rawBody` (Buffer/Uint8Array),
+    // y en Vercel el propio `req` es un `IncomingMessage` del que se leen.
+    const raw = (req as { rawBody?: Uint8Array | Buffer }).rawBody;
+    let bytes: Uint8Array | Buffer | null = raw ?? null;
+    if (!bytes && typeof (req as unknown as { on?: unknown }).on === "function") {
+      // Vercel: el req de Node, con su stream sin consumir.
+      bytes = await new Promise<Buffer>((done, fail) => {
+        const chunks: Buffer[] = [];
+        (req as unknown as NodeJS.ReadableStream)
+          .on("data", (chunk: Buffer) => chunks.push(chunk))
+          .on("end", () => done(Buffer.concat(chunks)))
+          .on("error", fail);
+      });
+    }
+    if (!bytes || bytes.length === 0) {
+      bad(res, 400, "bad_body", "La parte llegó vacía.");
       return;
     }
 
     await paced();
 
-    // El cuerpo tal cual: ni FormData ni buffer. El boundary multipart es parte
-    // del cuerpo y de la cabecera a la vez; rearmarlo en el servidor costaría
-    // memoria y tiempo que la subida de un archivo pesado no tiene. El
-    // `part_number` viaja dentro del propio multipart —lo pone el cliente—, así
-    // que aquí no hace falta nada más.
-    //
-    // El stream depende del entorno: en Node (plugin de Vite, Vercel) el propio
-    // `req` es un stream legible; en Cloudflare el handler recibe un objeto
-    // llano y el `Request` de verdad viaja en `rawRequest` —lo cuelga el
-    // adaptador de `functions/`—. `Request` de Workers sabe hacer de body;
-    // el tipado de `BodyInit` de Node no lo incluye, de ahí el molde.
-    const raw = (req as { rawRequest?: Request }).rawRequest;
-    const stream = (raw ?? req) as unknown as BodyInit;
-
     const send = await fetch(`${NOTION_BASE}/file_uploads/${uploadId}/send`, {
       method: "POST",
-      headers: { ...auth, "Content-Type": String(contentType) },
-      body: stream,
+      headers: { ...auth, "Content-Type": typeText },
+      body: bytes as unknown as BodyInit,
     });
 
     if (!send.ok) {

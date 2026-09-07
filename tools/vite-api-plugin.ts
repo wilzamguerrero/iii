@@ -66,13 +66,18 @@ export function apiDev({ dir = "api" }: { dir?: string } = {}): Plugin {
         try {
           const apiReq = req as ApiRequest;
           apiReq.query = parseQuery(url);
-          // Las subidas de archivos viajan como multipart y el handler las
-          // reenvía como stream: leerlas aquí primero sería bufferizarlas —el
-          // tope de `MAX_BODY_BYTES` rompería los chunks de 4 MiB con su
-          // boundary— y destruir la petición a mitad de subida. El resto de
-          // endpoints esperan JSON, y se parsea como siempre.
-          const isStream = isStreamBody(name, req);
-          if (!isStream) apiReq.body = await parseBody(req);
+          // Las subidas de archivos viajan como multipart: el cuerpo es binario
+          // con su boundary, y el handler lo reenvía **tal cual** a Notion. Se
+          // lee como Buffer —un chunk de 4 MiB cabe en memoria de sobra— y se
+          // cuelga en `rawBody`. Pasarlo por `parseBody` lo destruiría dos
+          // veces: el tope saltaría antes de tiempo y `toString("utf8")`
+          // corrompería los bytes del archivo.
+          const upload = isUploadBody(name, req);
+          if (upload) {
+            (apiReq as { rawBody?: Buffer }).rawBody = await readRawBytes(req);
+          } else {
+            apiReq.body = await parseBody(req);
+          }
 
           const module = await server.ssrLoadModule(`/${dir}/${name}.ts`);
           const handler = (module.default ?? module.handler) as ApiHandler | undefined;
@@ -100,12 +105,26 @@ export function apiDev({ dir = "api" }: { dir?: string } = {}): Plugin {
 
 /* ------------------------------------------------------------------ adaptador */
 
-/** Cierto cuando este handler lee el cuerpo como stream, no como JSON. */
-function isStreamBody(name: string, req: IncomingMessage): boolean {
+/**
+ * Cierto cuando este handler lee el cuerpo como los bytes de una subida.
+ *
+ * Sólo `notion-upload` con multipart: el chunk que lleva un pedazo de archivo,
+ * con su boundary. Los demás cuerpos multipart, si los hubiera, se leen igual
+ * que siempre.
+ */
+function isUploadBody(name: string, req: IncomingMessage): boolean {
   const type = req.headers["content-type"] ?? "";
-  // Sólo la subida: el multipart que lleva un chunk de archivo. Los demás
-  // cuerpos multipart, si los hubiera, se leen igual que siempre.
   return name === "notion-upload" && type.includes("multipart/form-data");
+}
+
+/** Los bytes del cuerpo, tal cual vinieron: ni texto ni tope de JSON. */
+function readRawBytes(req: IncomingMessage): Promise<Buffer> {
+  return new Promise((done, fail) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk: Buffer) => chunks.push(chunk));
+    req.on("end", () => done(Buffer.concat(chunks)));
+    req.on("error", fail);
+  });
 }
 
 function adaptResponse(res: ServerResponse): ApiResponse {

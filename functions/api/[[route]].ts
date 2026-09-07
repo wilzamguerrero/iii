@@ -94,10 +94,10 @@ async function parseBody(request: Request): Promise<unknown> {
   const method = request.method.toUpperCase();
   if (method === "GET" || method === "HEAD") return undefined;
 
-  // Las subidas de archivos viajan como multipart y su handler reenvía el
-  // cuerpo como stream: leerlas aquí primero sería bufferizarlas y el tope
-  // rompería los chunks. El handler lee `request` directo, igual que en el
-  // plugin de desarrollo.
+  // Las subidas de archivos viajan como multipart: el cuerpo es binario con
+  // su boundary y el handler lo reenvía **tal cual** a Notion. Se lee como
+  // bytes —un chunk de 4 MiB cabe en memoria de sobra— y se cuelga en
+  // `rawBody`. Pasarlo por texto corrompería los bytes del archivo.
   const type = request.headers.get("content-type") ?? "";
   if (type.includes("multipart/form-data")) return undefined;
 
@@ -238,8 +238,15 @@ export const onRequest: PagesFunction = async (context) => {
   exposeEnv(context.env);
 
   let body: unknown;
+  let rawBody: Uint8Array | undefined;
   try {
     body = await parseBody(context.request);
+    // Los bytes de una subida multipart, para que el handler los reenvíe
+    // intactos: en este entorno el handler no puede leer el `Request` —ya se
+    // consumió aquí— así que viajan con él.
+    if (body === undefined && (context.request.headers.get("content-type") ?? "").includes("multipart/form-data")) {
+      rawBody = new Uint8Array(await context.request.arrayBuffer());
+    }
   } catch (error) {
     return json(400, {
       error: "bad_body",
@@ -255,10 +262,7 @@ export const onRequest: PagesFunction = async (context) => {
     url: url.pathname + url.search,
     query: parseQuery(url),
     body,
-    // El cuerpo sin parsear —las subidas multipart—: el handler lo reenvía
-    // como stream y aquí está el `Request` de verdad que sabe hacerlo. En los
-    // otros entornos el `req` de Node ya es el stream por derecho propio.
-    rawRequest: context.request,
+    ...(rawBody !== undefined ? { rawBody } : {}),
   } as unknown as ApiRequest;
 
   const { res, response } = makeResponse();
