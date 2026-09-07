@@ -1,4 +1,4 @@
-﻿import { session } from "../persist/session.ts";
+import { session } from "../persist/session.ts";
 
 /**
  * El motor de subida de archivos a Notion (cliente).
@@ -63,16 +63,18 @@ export interface UploadItem {
   error?: string;
 }
 
-/** Lo que el asistente necesita saber de un archivo ya subido. */
+/** Lo que el editor necesita saber de un archivo ya subido. */
 export interface UploadedFile {
   name: string;
   finalName: string;
   size: number;
   uploadId: string;
-  /** El id del bloque que lo representa en la pÃ¡gina, si ya se adjuntÃ³. */
+  /** El id del bloque que lo representa en la página, si ya se adjuntó. */
   blockId?: string;
-  /** QuÃ© bloque nativo es en Notion. */
+  /** Qué bloque nativo es en Notion. */
   blockKind: "image" | "video" | "audio" | "pdf" | "file";
+  /** La URL temporal para verlo, cuando Notion la devuelve (imágenes y vídeo). */
+  url?: string | null;
   mimeType: string;
   zipped: boolean;
 }
@@ -430,7 +432,7 @@ async function uploadOne(
 export async function uploadFiles(
   files: readonly File[],
   pageId: string,
-  onProgress?: ProgressCb,
+  options: { after?: string | null; onProgress?: ProgressCb } = {},
 ): Promise<UploadedFile[]> {
   const token = session.get()?.token;
   if (!token) throw new Error("Sin sesiÃ³n de Notion no se puede subir. Conecta Notion primero.");
@@ -440,6 +442,7 @@ export async function uploadFiles(
     name: file.name, finalName: file.name, size: file.size,
     status: "waiting", percent: 0,
   }));
+  const onProgress = options.onProgress;
   const say = (): void => onProgress?.(items.map((one) => ({ ...one })));
 
   const sem = new AdaptiveSemaphore(START_CONCURRENCY, MIN_CONCURRENCY, MAX_CONCURRENCY);
@@ -477,6 +480,7 @@ export async function uploadFiles(
     headers: { "Content-Type": "application/json", "X-Notion-Token": token },
     body: JSON.stringify({
       pageId,
+      ...(options.after ? { after: options.after } : {}),
       blocks: uploaded.map((one) => ({
         uploadId: one.uploadId,
         name: one.name,
@@ -486,14 +490,17 @@ export async function uploadFiles(
     }),
   });
   const attach = await attachRes.json().catch(() => null) as
-    | { success?: boolean; ids?: string[] }
+    | { success?: boolean; created?: { id?: string; url?: string | null }[] }
     | null;
   if (!attachRes.ok || !attach?.success) throw await readError(attachRes);
 
   // Los ids de bloque que Notion creÃ³, para que el editor ancle su lÃ­nea ðŸ“Ž y
   // el guardado siguiente no los vea como nuevos.
-  (attach.ids ?? []).forEach((blockId, at) => {
-    if (uploaded[at]) uploaded[at]!.blockId = blockId;
+  (attach.created ?? []).forEach((one, at) => {
+    const target = uploaded[at];
+    if (!target) return;
+    if (one.id) target.blockId = one.id;
+    if (one.url) target.url = one.url;
   });
 
   if (failure) throw new Error(`Subieron ${uploaded.length} de ${files.length}. ${failure}`);

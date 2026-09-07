@@ -30,8 +30,12 @@ function pretty(bytes: number): string {
 
 export interface UploadPanel {
   root: HTMLElement;
-  /** Empieza la subida hacia esa página. Se cierra solo al acabar. */
-  start(files: readonly File[], pageId: string): void;
+  /**
+   * Empieza la subida hacia esa página. `after` es el id del bloque después
+   * del que van —donde estaba el cursor al elegir—; sin él van al final.
+   * Se cierra sola al acabar.
+   */
+  start(files: readonly File[], pageId: string, after?: string | null): void;
 }
 
 export function mountUploadPanel(onDone: (uploaded: readonly UploadedFile[]) => void): UploadPanel {
@@ -87,7 +91,7 @@ export function mountUploadPanel(onDone: (uploaded: readonly UploadedFile[]) => 
     render(list, ...items.map(row));
   }
 
-  function start(files: readonly File[], pageId: string): void {
+  function start(files: readonly File[], pageId: string, after?: string | null): void {
     if (files.length === 0 || running) return;
 
     const token = session.get()?.token;
@@ -106,7 +110,10 @@ export function mountUploadPanel(onDone: (uploaded: readonly UploadedFile[]) => 
     say.className = "upl__say";
     say.textContent = "No cierres la página mientras sube: el archivo viaja a tu Notion.";
 
-    void uploadFiles(files, pageId, (items) => { paint(items); })
+    void uploadFiles(files, pageId, {
+      ...(after ? { after } : {}),
+      onProgress: (items) => { paint(items); },
+    })
       .then((uploaded) => {
         say.textContent = uploaded.length === 1
           ? "El archivo quedó en el documento."

@@ -237,13 +237,19 @@ export async function readPage(
   token: string,
   pageId: string,
   signal?: AbortSignal,
-): Promise<{ name: string; content: string }> {
+): Promise<{ name: string; content: string; clipUrls: Map<string, string> }> {
   const [page, blocks] = await Promise.all([
     notionRequest<NotionPage>(token, `/pages/${pageId}`, { signal }),
     readBlocks(token, pageId, signal),
   ]);
   pageStates.set(pageId, { blocks });
-  return { name: pageTitle(page, UNTITLED_PAGE), content: blocksToMarkdown(blocks) };
+  // Las URLs temporales de los adjuntos, por id de bloque: caducan a la hora,
+  // así que se piden en cada apertura y viajan aparte del Markdown.
+  const clipUrls = new Map<string, string>();
+  for (const block of blocks) {
+    if (block.type === "attachment" && block.url) clipUrls.set(block.id, block.url);
+  }
+  return { name: pageTitle(page, UNTITLED_PAGE), content: blocksToMarkdown(blocks), clipUrls };
 }
 
 /**

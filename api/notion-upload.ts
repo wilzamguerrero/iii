@@ -220,10 +220,13 @@ const handler: ApiHandler = async (req, res) => {
   if (step === "attach") {
     const body = (req.body ?? {}) as {
       pageId?: unknown;
+      /** El bloque después del que van, si el cursor estaba en medio del documento. */
+      after?: unknown;
       blocks?: unknown;
     };
     const pageId = typeof body.pageId === "string" ? body.pageId.trim() : "";
     if (!ID.test(pageId)) { bad(res, 400, "bad_page", "Se requiere el id de la página de destino."); return; }
+    const after = typeof body.after === "string" && ID.test(body.after) ? body.after : null;
     if (!Array.isArray(body.blocks) || body.blocks.length === 0) {
       bad(res, 400, "bad_blocks", "No hay archivos que adjuntar.");
       return;
@@ -272,7 +275,9 @@ const handler: ApiHandler = async (req, res) => {
     const made = await fetch(`${NOTION_BASE}/blocks/${pageId}/children`, {
       method: "PATCH",
       headers: { ...auth, "Content-Type": "application/json" },
-      body: JSON.stringify({ children }),
+      // `after` ancla los archivos donde estaba el cursor; sin él van al final,
+      // que es el caso del menú de la baldosa.
+      body: JSON.stringify({ children, ...(after ? { after } : {}) }),
     });
 
     if (!made.ok) {
@@ -280,17 +285,28 @@ const handler: ApiHandler = async (req, res) => {
       return;
     }
 
-    // Los ids de los bloques creados: el editor los necesita para anclar la
-    // línea 📎 al bloque de verdad y que el guardado siguiente no los vea como
-    // nuevos.
+    // Los ids de los bloques creados —el editor ancla su línea a cada uno para
+    // que el guardado siguiente no los vea como nuevos— y las URLs temporales
+    // de las imágenes y vídeos, para que se vean en la hoja nada más subir.
+    // La URL caduca a la hora; la próxima apertura del documento la pide de
+    // nuevo a Notion.
     const answer = await made.json().catch(() => null) as
-      | { results?: { id?: string }[] }
+      | {
+          results?: {
+            id?: string;
+            type?: string;
+            image?: { file?: { url?: string } };
+            video?: { file?: { url?: string } };
+          }[];
+        }
       | null;
-    const ids = (answer?.results ?? [])
-      .map((one) => one.id ?? "")
-      .filter((id) => ID.test(id));
 
-    res.status(200).json({ success: true, count: children.length, ids });
+    const created = (answer?.results ?? []).map((one) => ({
+      id: typeof one.id === "string" ? one.id : "",
+      url: one.image?.file?.url ?? one.video?.file?.url ?? null,
+    }));
+
+    res.status(200).json({ success: true, count: children.length, created });
     return;
   }
 

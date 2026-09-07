@@ -280,6 +280,7 @@ export function blockOf(raw: RawBlock): DocBlock {
       ...base,
       type: "attachment",
       text: name || `archivo-${kind}`,
+      url: media?.file?.url ?? media?.external?.url ?? undefined,
       file: { name: name || `archivo-${kind}`, kind: kind === "pdf" ? "pdf" : kind },
     };
   }

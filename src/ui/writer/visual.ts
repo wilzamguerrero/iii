@@ -40,7 +40,7 @@ export interface Visual {
   /** Todo el documento, como Markdown con marcas de id. */
   markdown(): string;
   /** Reemplaza todo el documento. Pierde el cursor: es para abrir o recuperar. */
-  set(markdown: string): void;
+  set(markdown: string, urls?: ReadonlyMap<string, string>): void;
   /** Pone el cursor al principio. */
   focusStart(): void;
   /** Se escribió algo: el que guarda, cuenta y saca apartados, escucha aquí. */
@@ -63,8 +63,14 @@ export interface Visual {
   dictate(said: string): void;
   /** El menú «/» eligió un bloque: el bloque vacío del cursor pasa a ser eso. */
   applyBlock(id: string): void;
-  /** La línea 📎 que acaba de entrar recibe el id real de su bloque de Notion. */
-  anchorLastClip(blockId: string): void;
+  /**
+   * Un archivo subido entra justo donde estaba el cursor: imagen y vídeo se
+   * ven, el resto es su línea 📎. `blockId` es el id real de Notion —el bloque
+   * ya existe—, así que el guardado no lo toca.
+   */
+  insertAttachment(file: { name: string; kind: "image" | "video" | "audio" | "pdf" | "file"; url?: string | null; blockId?: string }): void;
+  /** El id del bloque que está justo antes del cursor: el ancla de la subida. */
+  blockBeforeCaret(): string | null;
   /** Archivos arrastrados sobre la hoja: la plataforma los cuelga. */
   onDropFiles(run: (files: readonly File[]) => void): void;
 }
@@ -142,6 +148,13 @@ export function mountVisual(): Visual {
     )) {
       const id = (MARK.exec(lines[born] ?? "") ?? [null, null])[1];
 
+      // La URL temporal de un adjunto no viaja en el Markdown —caduca a la
+      // hora—: viaja aparte, en el mapa de urls que el cargador pasa al
+      // montar. Si la línea es un adjunto con id, su URL va al bloque.
+      if (block.type === "attachment" && id && clipUrls.has(id)) {
+        block.url = clipUrls.get(id);
+      }
+
       if (block.type === "bullet" || block.type === "number") {
         const tag = block.type === "bullet" ? "ul" : "ol";
         if (!group || group.tag !== tag) { flush(); group = { tag, items: [] }; }
@@ -156,6 +169,13 @@ export function mountVisual(): Visual {
     flush();
     return out;
   }
+
+  /**
+   * Las URLs temporales de los adjuntos de este documento, por id de bloque.
+   * Las pone `set()` en cada carga: son las que dejan ver imágenes y vídeos
+   * sin pedirle otra vez a Notion.
+   */
+  let clipUrls = new Map<string, string>();
 
   /** Un bloque, como nodo listo para el editor. */
   function nodeOf(block: DocBlock, id: string | null): HTMLElement {
@@ -181,14 +201,55 @@ export function mountVisual(): Visual {
           }),
         ]);
       case "attachment": {
-        // El adjunto se lee como un nodo `figure` con el nombre y su clase: no
-        // es un enlace —la URL de Notion caduca a la hora—, es la línea que
-        // dice qué archivo vive ahí. `markdownToLines` lo vuelve a leer por su
-        // texto, así que el nombre es el bloque entero.
+        // Según lo que sea, se ve: la imagen como imagen, el vídeo con sus
+        // controles; el resto —pdf, zip, lo demás— como la línea con su
+        // nombre. La URL de Notion caduca a la hora: si ya no sirve, el
+        // navegador no pinta nada y la línea dice qué archivo vive ahí.
+        // Todos llevan `data-clip` —sean imagen o línea— y `data-name` con el
+        // nombre original: es lo que vuelve a la línea `📎` al leer el nodo.
         const name = block.file?.name ?? block.text;
+        const url = block.url ?? "";
+        const baseAttrs = { "data-b": id ?? "", "data-clip": "1", "data-name": name };
+
+        if (block.file?.kind === "image" && url) {
+          return el("figure", { class: "vis__fig", attrs: { ...baseAttrs, "data-kind": "image" } }, [
+            el("img", {
+              class: "vis__img",
+              attrs: { src: url, alt: name, loading: "lazy", referrerpolicy: "no-referrer" },
+            }),
+          ]);
+        }
+        if (block.file?.kind === "video" && url) {
+          return el("figure", { class: "vis__fig", attrs: { ...baseAttrs, "data-kind": "video" } }, [
+            el("video", {
+              class: "vis__img",
+              attrs: { src: url, controls: true, preload: "metadata" },
+            }),
+          ]);
+        }
+        if (block.file?.kind === "audio" && url) {
+          return el("figure", { class: "vis__fig", attrs: { ...baseAttrs, "data-kind": "audio" } }, [
+            el("audio", {
+              class: "vis__audio",
+              attrs: { src: url, controls: true, preload: "metadata" },
+            }),
+          ]);
+        }
+        if (block.file?.kind === "pdf" && url) {
+          return el("figure", { class: "vis__clip vis__clip--link", attrs: { ...baseAttrs, "data-kind": "pdf" } }, [
+            el("span", { class: "vis__clip__mark", text: "📄" }),
+            el("a", {
+              class: "vis__clip__name",
+              text: name,
+              attrs: { href: url, target: "_blank", rel: "noreferrer" },
+            }),
+          ]);
+        }
+        // El resto: la línea que dice qué archivo vive ahí. No es un enlace —
+        // la URL de Notion caduca—, es el nombre tal cual se subió.
         return el("figure", {
           class: "vis__clip",
-          attrs: { "data-b": id ?? "", "data-clip": "1" },
+          attrs: baseAttrs,
         }, [
           el("span", { class: "vis__clip__mark", text: "📎" }),
           el("span", { class: "vis__clip__name", text: name }),
@@ -245,11 +306,15 @@ export function mountVisual(): Visual {
         return items.join("\n");
       }
       case "FIGURE": {
-        // El adjunto y la imagen comparten etiqueta: el adjunto se reconoce
-        // por su `data-clip` y se escribe con su gramática 📎.
+        // Los adjuntos comparten etiqueta con la imagen: los distingue su
+        // `data-clip`, y todos vuelven a la misma línea 📎 —el nombre viaja en
+        // `data-name`—, sea imagen, vídeo o archivo.
         if (node.getAttribute("data-clip")) {
-          const name = node.querySelector(".vis__clip__name");
-          return `📎 ${name ? name.textContent ?? "" : plainOf(node)}${mark}`;
+          const name = node.getAttribute("data-name")
+            ?? node.querySelector(".vis__clip__name")?.textContent
+            ?? node.querySelector("img")?.getAttribute("alt")
+            ?? plainOf(node);
+          return `📎 ${name ?? ""}${mark}`;
         }
         const img = node.querySelector("img");
         const src = img ? img.getAttribute("src") ?? "" : "";
@@ -437,11 +502,51 @@ export function mountVisual(): Visual {
     for (const run of [...dropListeners]) run([...files]);
   });
 
-  /** La última línea 📎 que entró: para anclarla a su bloque de Notion. */
-  function anchorLastClip(blockId: string): void {
-    const clips = [...root.querySelectorAll<HTMLElement>(".vis__clip")];
-    const last = clips[clips.length - 1];
-    if (last) last.setAttribute("data-b", blockId);
+  /**
+   * Un archivo subido entra justo donde estaba el cursor.
+   *
+   * El nodo attachment se construye con el mismo `nodeOf` que usaría al leer
+   * el documento —mismo render, mismo `data-clip`— y se inserta después del
+   * bloque del cursor; un párrafo vacío lo sigue para seguir escribiendo.
+   * `blockId` ya es el de Notion: el guardado lo deja quieto.
+   */
+  function insertAttachment(file: { name: string; kind: "image" | "video" | "audio" | "pdf" | "file"; url?: string | null; blockId?: string }): void {
+    const node = nodeOf({
+      id: file.blockId ?? "tmp",
+      type: "attachment",
+      text: file.name,
+      url: file.url ?? undefined,
+      file: { name: file.name, kind: file.kind },
+    }, file.blockId ?? null);
+    root.focus();
+
+    const block = caretBlock();
+    if (block) {
+      block.after(node);
+    } else {
+      root.append(node);
+    }
+
+    // Un párrafo después, para que Enter siga siendo Enter y el adjunto no se
+    // parta al escribir debajo.
+    const para = el("p", { class: "vis__b vis__b--p" });
+    para.setAttribute("data-b", "");
+    node.after(para);
+    place(para);
+    edited();
+  }
+
+  /** El id del bloque justo antes del cursor: el ancla de la subida. */
+  function blockBeforeCaret(): string | null {
+    const block = caretBlock();
+    if (!block) return null;
+    // El cursor dentro de un adjunto: el ancla es él mismo —los archivos
+    // quedan detrás, que es donde se los puso—.
+    const before = block.previousElementSibling ?? block;
+    const id = before.getAttribute("data-b");
+    // Sin id no hay ancla de verdad: el bloque aún no existe en Notion y
+    // `after` lo rechazaría. Va al final.
+    return id && /^[a-f0-9-]{32}$/i.test(id.replace(/-/g, "")) ? id : null;
   }
 
   /* --- lo que se ofrece por fuera -------------------------------------- */
@@ -449,8 +554,9 @@ export function mountVisual(): Visual {
   return {
     root,
     markdown,
-    set(markdown) {
+    set(markdown, urls) {
       editing = true;
+      clipUrls = new Map(urls ?? []);
       render(root, ...nodesOf(markdown));
       if (root.children.length === 0) root.append(el("p", { class: "vis__b vis__b--p" }));
       editing = false;
@@ -474,7 +580,8 @@ export function mountVisual(): Visual {
     onDropFiles(run) {
       dropListeners.add(run);
     },
-    anchorLastClip,
+    insertAttachment,
+    blockBeforeCaret,
     selected() {
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed) return "";

@@ -429,11 +429,14 @@ export function mountFolders(options: FoldersOptions): Folders {
     if (!target) return;
     try {
       // El aviso va en la línea de estado de la retícula, que es donde ya
-      // hablan los errores de red: «subiendo…» y al final «quedaron».
+      // hablan los errores de red: «subiendo…» y al final «quedaron». Sin
+      // ancla: desde la baldosa los archivos van al final de la página.
       say(files.length === 1 ? "Subiendo un archivo…" : `Subiendo ${files.length} archivos…`);
-      const uploaded = await uploadFiles(files, target.id, (items) => {
-        const done = items.filter((one) => one.status === "done").length;
-        say(`Subiendo… ${done} de ${items.length}`);
+      const uploaded = await uploadFiles(files, target.id, {
+        onProgress: (items) => {
+          const done = items.filter((one) => one.status === "done").length;
+          say(`Subiendo… ${done} de ${items.length}`);
+        },
       });
       say(
         uploaded.length === 1

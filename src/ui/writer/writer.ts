@@ -236,24 +236,27 @@ function insertStructure(markdown: string, name: string): void {
 /**
  * Adjuntar archivos al documento.
  *
- * Suben por el motor (`core/notion/upload.ts`) directo a la página abierta y
- * al terminar cada uno deja su línea `📎 nombre` en la hoja, con el id del
- * bloque que Notion creó: así el guardado siguiente no lo ve como nuevo.
+ * El ancla se toma **al elegir**: el id del bloque donde estaba el cursor, que
+ * es donde la persona los puso. Mientras suben —segundos o minutos con un
+ * archivo pesado— la hoja puede moverse; el ancla ya quedó guardada.
  */
 function attachFiles(files: readonly File[]): void {
   const current = page;
   if (!current || !upload) return;
-  upload.start(files, current.id);
+  const anchor = visual?.blockBeforeCaret() ?? "";
+  upload.start(files, current.id, anchor);
 }
 
-/** Lo que hace el panel cuando un archivo llegó: su línea en la hoja. */
+/** Lo que el panel hace cuando un archivo llegó: entra donde se pidió. */
 function uploadedLines(uploaded: readonly UploadedFile[]): void {
   if (!visual || uploaded.length === 0) return;
   for (const one of uploaded) {
-    visual.insertAtCaret(`📎 ${one.name}`);
-    // La línea que acaba de entrar lleva id temporal; el bloque de Notion ya
-    // existe. Se re-ancla para que el guardado lo deje quieto.
-    if (one.blockId) visual.anchorLastClip(one.blockId);
+    visual.insertAttachment({
+      name: one.name,
+      kind: one.blockKind,
+      ...(one.url !== undefined ? { url: one.url } : {}),
+      ...(one.blockId !== undefined ? { blockId: one.blockId } : {}),
+    });
   }
   changed();
 }
@@ -518,11 +521,13 @@ async function load(target: SelectedPage): Promise<void> {
 
   let content = "";
   let name = target.name;
+  let clipUrls = new Map<string, string>();
   try {
     const got = await readPage(token, target.id);
     if (mine !== seq) return;
     content = got.content;
     name = got.name || target.name;
+    clipUrls = got.clipUrls;
   } catch (error) {
     if (mine !== seq) return;
     // La hoja se queda cerrada a propósito: si no se pudo leer el documento,
@@ -542,7 +547,7 @@ async function load(target: SelectedPage): Promise<void> {
   const draft = await readDraft(target.id);
   if (mine !== seq) return;
 
-  visual.set(content);
+  visual.set(content, clipUrls);
   saver.begin(target.id, name, content);
   changed();
   visual.focusStart();

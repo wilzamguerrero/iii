@@ -166,6 +166,8 @@
   color: var(--ink);
 }
 
+.vis__clip--link { background: var(--tint); }
+
 .vis__clip__mark {
   font-size: 15px;
   line-height: 1;
@@ -177,6 +179,13 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* El audio dentro de la hoja: ancho del texto, alto de un control. */
+.vis__audio {
+  width: 100%;
+  max-width: 420px;
+  height: 36px;
 }
 
 /* El arrastre de archivos encima de la hoja: el borde lo dice. */
