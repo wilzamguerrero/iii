@@ -56,6 +56,7 @@ UI. Eso es lo que hace viable el traslado sin arrastrar la interfaz.
 | Panel de IA arrastrable (`components/AIChatPanel.tsx`) | El **comportamiento**: posición persistida, contexto del editor, insertar/reemplazar en el documento. La UI se rehace. |
 | `components/FileTree.tsx` | El **comportamiento** del árbol de toggles. La UI se rehace. |
 | `GUIA_NOTION_OAUTH.md` | Checklist de verificación del flujo OAuth. |
+| `reference/PFold-master` | La **técnica** del pliegue, no el plugin: bisagras anidadas con `preserve-3d`, giro de 180° sobre el borde y un velo por capa. El plugin clona el contenido dentro de un envoltorio por pliegue, y eso aquí rompería el campo, el foco y el registro (§12 D9). |
 
 **No se trae:** presentaciones, temas de reporte, mapa mental, galería masonry, subidas
 multipart, PWA, notificaciones push, compartir por enlace, Monaco, CodeMirror, Lexical.
@@ -591,6 +592,7 @@ Lo que ya existe va sin marca; lo que todavía es destino de una fase lleva **(F
 │   │   │                         folders · tree (desde la raíz) · menu · reload
 │   │   ├── start/              · de la intención al proyecto: entry · begin · open
 │   │   ├── assistant/          · el tirador de papel, su ventana y los ajustes
+│   │   │                         fold — el pliego que la despliega (§12 D9)
 │   │   ├── writer/             · la hoja: writer · markdown · outline · panel
 │   │   │                         save · structure  (§12 D7, no es tiptap)
 │   │   ├── voice/              · mic — el mismo botón en los tres sitios
@@ -603,8 +605,9 @@ Lo que ya existe va sin marca; lo que todavía es destino de una fase lleva **(F
 │       ├── writer.css          · la hoja, sus columnas y la vista de lectura
 │       ├── begin.css           · el arranque de un proyecto
 │       ├── voice.css           · el botón de dictar
-│       └── assistant.css       · el tirador y la ventana flotante
-├── smoke/                      · 153 comprobaciones en un Chrome sin ventana (§12 D8)
+│       ├── assistant.css       · el tirador y la ventana flotante
+│       └── fold.css           · la geometría del papel que se dobla
+├── smoke/                      · 169 comprobaciones en un Chrome sin ventana (§12 D8)
 │   ├── run.mjs · part.mjs · cdp.mjs · README.md
 │   ├── parts/                  · siete, una por lo que hace la plataforma
 │   └── doubles/                · Notion, el modelo y la voz, fingidos
@@ -840,7 +843,7 @@ Ninguno queda bloqueado por las decisiones de este plan.
 8. **D8 — El humo vive en el repositorio (`smoke/`).** **Aplicada el 2026-09-05, y es la
    que más conviene confirmar o rechazar.** Las siete partes que comprueban la plataforma se
    escribieron como guiones de usar y tirar en un directorio temporal; ahora están dentro,
-   con `npm run smoke`. Son 153 comprobaciones sobre la plataforma de verdad en un Chrome sin
+   con `npm run smoke`. Son 169 comprobaciones sobre la plataforma de verdad en un Chrome sin
    ventana, y **sin una sola dependencia nueva**: `smoke/cdp.mjs` son sesenta líneas de
    protocolo de depuración sobre el `WebSocket` y el `fetch` que ya trae Node.
 
@@ -850,6 +853,39 @@ Ninguno queda bloqueado por las decisiones de este plan.
    contra: es código que hay que mantener cuando la interfaz cambie, y sus dobles de Notion y
    del modelo pueden quedarse viejos y dar por bueno algo que ya no lo es. `smoke/README.md`
    dice qué finge cada uno y qué no puede probar ninguno.
+
+9. **D9 — Lo que se pliega es un pliego de papel en blanco, no la ventana.** **Aplicada el
+   2026-09-06.** La ventana del asistente aparecía y desaparecía con un `hidden` seco; ahora
+   el papel sale volando del asa y se despliega —cuarto de pliego, tres pliegues, 640 ms al
+   abrir y 300 al recoger— en `ui/assistant/fold.ts` y `styles/fold.css`.
+
+   De `reference/PFold-master` se toma la técnica y no el código, y ahí está la decisión: el
+   plugin **clona el contenido** dentro de un envoltorio por cada pliegue. Hacer eso con la
+   ventana viva la rompe —el campo de texto, el foco, la selección, el desplazamiento del
+   registro y sus suscripciones—, así que lo que se dobla son **ocho hojas de papel en
+   blanco** y la ventana de verdad aparece opaca en el fotograma en que el papel acaba de
+   desplegarse. El relevo no se nota porque el último fotograma del pliego es su rectángulo
+   exacto, con el mismo `--paper` y las mismas esquinas. Hay tres razones más, todas de
+   producción: el texto dentro de un `rotateX/Y` sale borroso en Chromium y repinta el
+   registro en cada fotograma; el velo de cada capa necesita una capa encima de cada cara, y
+   sobre la ventana viva no hay dónde ponerla; y los quince nodos se construyen y se tiran en
+   cada gesto, sin dejar nada montado.
+
+   Y se corrige lo que en PFold se lee como rígido: allí un pliegue espera a que acabe el
+   anterior, con retardo fijo y curva lineal. Aquí cada uno arranca al 42 % del anterior y
+   todo se declara con **la misma duración**, con el escalonado en los `offset`. Eso vuelve la
+   coreografía un solo guion, que se invierte en marcha —`playbackRate` negativo— desde donde
+   esté y sin salto: pulsar dos veces seguidas no puede dejar la ventana a medias.
+
+   Lo que no se negocia: el estado —`hidden`, `aria-expanded`, el foco— es **inmediato**, y el
+   adorno no retrasa lo que anuncia un lector de pantalla; con movimiento reducido no se
+   construye nada; y ni un `filter` ni un `will-change` dentro del pliego, que aplanan el
+   contexto 3D o pierden el orden de las caras a media vuelta.
+
+   El precio, asumido: el pliego mide el panel al empezar, así que redimensionar la ventana en
+   mitad del gesto lo termina de golpe; y el papel no es la ventana, de modo que si algún día
+   el panel dejara de ser un rectángulo de un solo color, el relevo se notaría. Los pliegues
+   son datos —`CREASES = ["x", "y", "y"]`—: cambiar esa lista cambia el origami y nada más.
 
 ---
 
@@ -918,7 +954,9 @@ Lo que hay en pie:
 - **El asistente**: tirador de papel y ventana, los dos arrastrables y persistentes; el
   hilo de la conversación fuera de la interfaz; el sistema 3i escrito para preguntar. Lo que
   ve es **lo que se acaba de escribir**, no lo último guardado: mientras la hoja está
-  delante, el contexto se toma de ella y no se le vuelve a pedir nada a Notion.
+  delante, el contexto se toma de ella y no se le vuelve a pedir nada a Notion. Y su ventana
+  **se pliega**: el papel sale volando del asa y se despliega en tres pliegues, en la técnica
+  de `reference/PFold-master` y sin su plugin (§12 D9). El estado va delante del adorno.
 - **El documento** (Fase 3, y §12 D7 dice en qué se apartó del plan): el Markdown en un
   `textarea`, la vista de lectura que lo pinta, los apartados a la izquierda sacados del
   propio texto, la revisión a la derecha, las tres estructuras del Reglamento insertables y
@@ -933,7 +971,7 @@ Lo que hay en pie:
 - **El tema** claro, oscuro o automático, en los ajustes del sistema: una segunda tabla de
   variables en `tokens.css`, aplicada antes del primer pintado. La intro no cambia de color.
 
-**El humo: 153 comprobaciones sobre la plataforma de verdad** (`npm run smoke`; qué finge
+**El humo: 169 comprobaciones sobre la plataforma de verdad** (`npm run smoke`; qué finge
 cada doble y qué no puede probar ninguno está en `smoke/README.md`). Siete partes que abren
 la plataforma en un Chrome sin ventana y la manejan como la manejaría una persona; sólo se
 finge lo que está fuera —Notion, el modelo y el reconocedor de voz del navegador—. Sin una
@@ -978,7 +1016,7 @@ Y sirvió para lo que se puso: **dos fallos que ningún `tsc` iba a ver**.
    lado —cuándo se enciende, dónde cae lo dicho, cómo se apaga y qué dice al apagarse—, no
    que Chrome entienda el español de aquí. Queda dictar un párrafo hablando, en la entrada y
    en la hoja.
-5. **Cómo se ve.** Ni `tsc --noEmit`, ni `npm run build`, ni 153 comprobaciones dicen nada de
+5. **Cómo se ve.** Ni `tsc --noEmit`, ni `npm run build`, ni 169 comprobaciones dicen nada de
    la tipografía, del aire, del tema oscuro con la intro blanca dentro, ni de cómo queda todo
    en una pantalla pequeña. Y los cinco actos de la intro, que el código no demuestra por no
    haber cambiado.

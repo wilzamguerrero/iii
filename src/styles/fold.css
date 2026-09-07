@@ -1,0 +1,80 @@
+/* ==========================================================================
+   El pliego: la geometría del papel que se dobla  (plan.md §12, D9)
+
+   Aquí sólo está lo que no cambia. Las medidas —el rectángulo de la ventana, el
+   tamaño del paquete, la bisagra de cada faldón— las pone `assistant/fold.ts`
+   en línea, porque salen de medir el panel y el asa cada vez que se abre.
+
+   Dos reglas que no se pueden romper aquí dentro:
+
+   - Ni una sola `filter`. `drop-shadow` aplana el contexto 3D y el pliegue
+     dejaría de existir. La sombra es `.fold__cast`, un nodo aparte.
+   - Ni `will-change`, aunque tiente. Chromium ya compone lo que lleva una
+     transformación 3D, y forzar la capa aquí es una de las formas conocidas de
+     que se pierda el orden de las caras a media vuelta.
+
+   Ni un color literal: `--paper`, `--ink` y `--shadow` cruzan solos al tema
+   oscuro.
+   ========================================================================== */
+
+/* z-index 8: el del asa, y por debajo del 9 de la ventana. Así, cuando el papel
+   acaba de desplegarse, la ventana lo tapa sin trucos de orden en el DOM. */
+.ai-fold {
+  position: fixed;
+  z-index: 8;
+  pointer-events: none;
+  /* Bastante lejos: el pliegue tiene que leerse como papel visto de frente, no
+     como una puerta abriéndose. */
+  perspective: 1400px;
+}
+
+/* Los tres del vuelo: uno mueve en x, otro en y y el tercero hace crecer. Cada
+   uno con su curva, que es lo que convierte la línea recta en arco. */
+.fold__fly {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+}
+
+/* Una parte del pliego. Las que son faldón llevan además `.fold__flap`, y su
+   bisagra y su giro los pone `fold.ts`. */
+.fold__part {
+  position: absolute;
+  transform-style: preserve-3d;
+}
+
+/* Una cara: papel y nada más. Sin borde a propósito —una línea por celda
+   dibujaría la rejilla del pliegue— y sin esquinas redondeadas, que las de la
+   ventana llegan con la ventana. */
+.fold__face {
+  background: var(--paper);
+}
+
+/* El velo de una capa. Va dentro de la cara, que es plana: así siempre pinta
+   encima de su propio papel y no depende de cómo ordene el 3D. */
+.fold__shade {
+  position: absolute;
+  inset: 0;
+  background: var(--ink);
+  opacity: 0;
+}
+
+/* La sombra crece a saltos: un envoltorio por pliegue, cada uno escalando un
+   eje desde la esquina del paquete. */
+.fold__cast-step {
+  position: absolute;
+}
+
+/* Sin relleno: el papel que todavía no ha llegado no debe tapar nada. Con fondo
+   aquí, la ventana se adelantaría al pliegue y se perdería el gesto. */
+.fold__cast {
+  position: absolute;
+  border-radius: var(--r-panel);
+  box-shadow: var(--shadow);
+}
+
+/* Con movimiento reducido no se construye nada; esto es el cinturón por si
+   alguna vez se construyera. */
+@media (prefers-reduced-motion: reduce) {
+  .ai-fold { display: none; }
+}

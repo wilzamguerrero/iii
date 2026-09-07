@@ -62,6 +62,55 @@
 
 .ai-handle.is-in { animation: ai-in 0.72s var(--out-expo) both; }
 
+/* --- soltar y recoger el papel -------------------------------------------- */
+
+/* Al abrir, el asa suelta el pliego que sale volando (`assistant/fold.ts`); al
+   cerrar, lo recoge. Aquí eso es su propio pliegue: las cinco caras que ya tiene
+   se abren un instante y vuelven. No hay figura nueva, y el gesto del asa y el
+   del papel son el mismo gesto contado dos veces.
+
+   Cada cara se abre hacia donde la abre el ratón, tres veces más lejos: la
+   dirección ya está calibrada arriba y no se inventa otra. */
+.ai-handle .ori__f { --bx: 0px; --by: 0px; }
+.ai-handle.is-releasing .ori__f1, .ai-handle.is-catching .ori__f1 { --bx: 3.3px; --by: -4.2px; }
+.ai-handle.is-releasing .ori__f2, .ai-handle.is-catching .ori__f2 { --bx: -4.5px; --by: -2.7px; }
+.ai-handle.is-releasing .ori__f3, .ai-handle.is-catching .ori__f3 { --bx: 4.2px; --by: 3.3px; }
+.ai-handle.is-releasing .ori__f4, .ai-handle.is-catching .ori__f4 { --bx: 0.6px; --by: 5.1px; }
+.ai-handle.is-releasing .ori__f5, .ai-handle.is-catching .ori__f5 { --bx: -4.8px; --by: 3.6px; }
+
+/* Las caras y el conjunto duran lo mismo, sin retardos escalonados: así el
+   `animationend` que quita la clase llega una sola vez y no corta a nadie. Lo
+   que las distingue es hacia dónde se abre cada una. */
+.ai-handle.is-releasing .ori { animation: ai-let-go 0.42s var(--out-expo) both; }
+.ai-handle.is-releasing .ori__f { animation: ai-burst 0.42s var(--out-expo) both; }
+.ai-handle.is-catching .ori { animation: ai-catch 0.3s var(--out-quart) both; }
+.ai-handle.is-catching .ori__f { animation: ai-gather 0.3s var(--out-quart) both; }
+
+/* Acaba en la posición de `is-on`, que es la que toma el mando al quitar la
+   clase: si acabara en otra, el papel daría un salto al terminar. */
+@keyframes ai-let-go {
+  0%   { transform: rotate(0deg) scale(1); }
+  30%  { transform: rotate(-24deg) translateY(-4px) scale(1.12); }
+  100% { transform: rotate(-14deg) scale(0.96); }
+}
+
+@keyframes ai-burst {
+  0%   { transform: translate(0, 0) scale(1); opacity: 1; }
+  30%  { transform: translate(var(--bx), var(--by)) scale(1.16); opacity: 0.72; }
+  100% { transform: translate(0, 0) scale(1); opacity: 1; }
+}
+
+@keyframes ai-catch {
+  0%   { transform: rotate(-14deg) scale(0.96); }
+  38%  { transform: rotate(7deg) scale(1.1); }
+  100% { transform: rotate(0deg) scale(1); }
+}
+
+@keyframes ai-gather {
+  0%   { transform: translate(var(--bx), var(--by)) scale(1.18); opacity: 0.7; }
+  100% { transform: translate(0, 0) scale(1); opacity: 1; }
+}
+
 /* --- la ventana ---------------------------------------------------------- */
 
 .ai-pop {
@@ -81,6 +130,17 @@
 /* `display: flex` gana a `[hidden]`, que sólo pone `display: none` en el estilo
    del navegador. Sin esta línea la ventana no se cerraría nunca. */
 .ai-pop[hidden] { display: none; }
+
+/* Mientras el pliego se despliega, la ventana está montada y medida pero no se
+   ve: la opacidad la lleva la animación de `fold.ts`, y esto es lo que sostiene
+   el primer fotograma y lo que impide pulsar una ventana a medio abrir.
+
+   Opacidad y no `visibility`: oculta se llevaría el foco del campo, que se pone
+   al abrir y no debe esperar seis décimas. */
+.ai-pop.is-folding {
+  opacity: 0;
+  pointer-events: none;
+}
 
 .ai-pop__grip {
   display: flex;
@@ -288,6 +348,10 @@
 
 @media (prefers-reduced-motion: reduce) {
   .ai-handle, .ai-handle.is-in { transition: none; animation: none; }
+  /* Ni el pliego ni el gesto del asa: `fold.ts` tampoco construye nada. */
+  .ai-handle.is-releasing .ori, .ai-handle.is-releasing .ori__f,
+  .ai-handle.is-catching .ori, .ai-handle.is-catching .ori__f { animation: none; }
+  .ai-pop.is-folding { opacity: 1; pointer-events: auto; }
   .ai-turn--wait { animation: none; opacity: 0.6; }
   .ai-seed, .ai-pop__act { transition: none; }
 }

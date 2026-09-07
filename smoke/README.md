@@ -2,7 +2,7 @@
 
 Siete guiones que abren la plataforma de verdad en un Chrome sin ventana, la
 manejan como la manejaría una persona y comprueban lo que queda en la pantalla.
-**153 comprobaciones.**
+**169 comprobaciones.**
 
 ```
 npm run smoke
@@ -56,7 +56,10 @@ pasan de una corrida a otra.
    más redondo que un panel.
 6. **Asistente** — se abre, dice qué ve, manda método + contexto + pregunta, ve
    **lo que se acaba de escribir** sin volver a leer Notion, se mueve con las
-   flechas y recuerda dónde se dejó.
+   flechas y recuerda dónde se dejó. Y su ventana se pliega: ocho hojas de papel
+   en blanco que se despliegan, con la ventana montada y anunciada en el primer
+   fotograma —el adorno nunca va delante del estado—, sin quedarse a medias al
+   pulsar dos veces seguidas, y sin construir nada con movimiento reducido.
 7. **Dictado** — el mismo botón en los tres sitios donde se escribe; lo
    provisional no se escribe, lo terminado cae en el cursor con su espacio, la
    pausa no lo apaga, el bucle tiene tope, y sin permiso se apaga diciendo por qué.

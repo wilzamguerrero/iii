@@ -1,6 +1,7 @@
 import { el, render } from "../dom.ts";
 import { makeMovable, type Movable } from "../drag.ts";
 import { origamiSvg } from "../origami.ts";
+import { mountFold, type Fold } from "./fold.ts";
 import { onMenuVisible } from "../afterIntro.ts";
 import {
   activeProvider, aiConfig, hasCredential, probeServerKeys,
@@ -58,6 +59,7 @@ let footLine: HTMLElement | null = null;
 let mic: Mic | null = null;
 let panelMove: Movable | null = null;
 let handleMove: Movable | null = null;
+let fold: Fold | null = null;
 
 /* --- lo que se dice ------------------------------------------------------- */
 
@@ -329,6 +331,11 @@ function ensure(): void {
     }),
   });
 
+  // El pliegue va después de colocarlos: se mide el rectángulo de la ventana y
+  // el del asa cada vez que se abre, así que aquí sólo hace falta que los dos
+  // nodos existan y estén en la página.
+  fold = mountFold(panel, handle);
+
   paintLog();
   paintContext();
   paintFoot();
@@ -344,18 +351,49 @@ function ensure(): void {
   serverKeys.subscribe(paintFoot);
 }
 
+/**
+ * El gesto del asa: soltar el papel al abrir, recogerlo al cerrar. La clase se
+ * quita al acabar para devolver el mando a `is-on`, que es quien deja el papel
+ * inclinado mientras la ventana está abierta.
+ */
+function pleat(name: "is-releasing" | "is-catching"): void {
+  if (!handle) return;
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+  const node = handle;
+  node.classList.remove("is-releasing", "is-catching");
+  // Sin leer una medida por medio, quitar y poner la misma clase en el mismo
+  // fotograma no reinicia la animación: el navegador no ve el cambio.
+  void node.offsetWidth;
+  node.classList.add(name);
+  node.addEventListener("animationend", () => { node.classList.remove(name); }, { once: true });
+}
+
+/**
+ * Abrir. El estado va primero y la animación después: lo que anuncia un lector
+ * de pantalla no espera las seis décimas del pliegue.
+ */
 function open(): void {
   ensure();
   if (!handle || !panel) return;
 
+  const wasShut = panel.hidden;
+
   handle.hidden = false;
   handleMove?.place();
   panel.hidden = false;
-  // Se coloca ya visible: oculto no tiene medidas y no se podría encajar.
+  // Se coloca ya visible: oculto no tiene medidas y no se podría encajar. El
+  // pliegue lo tapa con opacidad, que sí las tiene.
   panelMove?.place();
   handle.setAttribute("aria-expanded", "true");
   handle.classList.add("is-on");
   field?.focus();
+
+  // Sólo si estaba cerrada: `askAssistant` abre también con la ventana delante,
+  // y volver a plegar lo que ya está desplegado sería un parpadeo.
+  if (!wasShut) return;
+  pleat("is-releasing");
+  void fold?.open();
 }
 
 function close(): void {
@@ -363,6 +401,12 @@ function close(): void {
   // Cerrar la ventana apaga el micrófono: seguir escuchando lo que se diga
   // delante de una ventana cerrada no lo pidió nadie.
   mic?.stop();
+  // Antes de esconderla: el pliego necesita el rectángulo que ocupa para poder
+  // recogerlo, y escondida no tiene ninguno.
+  if (!panel.hidden) {
+    void fold?.close();
+    pleat("is-catching");
+  }
   panel.hidden = true;
   handle.setAttribute("aria-expanded", "false");
   handle.classList.remove("is-on");

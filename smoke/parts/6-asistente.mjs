@@ -123,4 +123,109 @@ const shut = await cdp.evaluate(`({
 say(shut.pop === true && shut.handle === false, "cerrar la ventana deja el papel donde estaba");
 say(shut.expanded === "false", "y lo dice quien lo abre");
 
+/* --- el pliego: el papel se despliega y no retrasa el estado ------------ */
+
+/* Lo que se mira aquí es que el adorno sea adorno. Los tiempos son cortos a
+   propósito: a 40 ms el pliego está a menos de un doceavo y la ventana ya tiene
+   que estar montada, medida y anunciada. Si algún día el estado se pusiera
+   detrás de la animación, esto es lo que se pone rojo. */
+
+await cdp.evaluate(`document.querySelector(".ai-handle").click()`);
+await wait(40);
+const folding = await cdp.evaluate(`(() => {
+  const pop = document.querySelector(".ai-pop");
+  const shell = document.querySelector(".ai-fold");
+  const box = pop.getBoundingClientRect();
+  const last = shell ? shell.getBoundingClientRect() : null;
+  return {
+    hidden: pop.hidden,
+    expanded: document.querySelector(".ai-handle").getAttribute("aria-expanded"),
+    folding: pop.classList.contains("is-folding"),
+    shell: !!shell,
+    faces: shell ? shell.querySelectorAll(".fold__face").length : 0,
+    flaps: shell ? shell.querySelectorAll(".fold__flap").length : 0,
+    veils: shell ? shell.querySelectorAll(".fold__shade").length : 0,
+    filters: shell
+      ? [...shell.querySelectorAll("*")].filter((n) => getComputedStyle(n).filter !== "none").length
+      : -1,
+    fits: last ? Math.abs(last.width - box.width) < 1 && Math.abs(last.height - box.height) < 1 : false,
+    over: shell ? Number(getComputedStyle(shell).zIndex) < Number(getComputedStyle(pop).zIndex) : false,
+    grabs: shell ? getComputedStyle(shell).pointerEvents : "",
+  };
+})()`);
+say(folding.hidden === false && folding.expanded === "true",
+  "la ventana esta montada y anunciada en el primer fotograma, no al final del pliegue",
+  `hidden=${folding.hidden} expanded=${folding.expanded}`);
+say(folding.shell === true && folding.folding === true, "y mientras se despliega el papel la tapa");
+say(folding.faces === 8, "el pliego son ocho hojas: tres pliegues, un cuarto de pliego", "hojas=" + folding.faces);
+say(folding.flaps === 7 && folding.veils === 7,
+  "siete faldones con su velo, uno por cada pliegue que tienen encima",
+  `faldones=${folding.flaps} velos=${folding.veils}`);
+say(folding.filters === 0, "ni un filtro dentro: aplanaria el 3D y no habria pliegue", "con filtro=" + folding.filters);
+say(folding.fits === true, "el pliego mide lo que la ventana, para que el relevo no se note");
+say(folding.over === true, "y va por debajo de ella, sin trucos de orden en el DOM");
+say(folding.grabs === "none", "el papel no se puede pulsar", folding.grabs);
+
+await wait(900);
+const done = await cdp.evaluate(`(() => {
+  const pop = document.querySelector(".ai-pop");
+  return {
+    shell: !!document.querySelector(".ai-fold"),
+    folding: pop.classList.contains("is-folding"),
+    opacity: getComputedStyle(pop).opacity,
+    ink: [...pop.children].map((n) => getComputedStyle(n).opacity).filter((o) => o !== "1").length,
+  };
+})()`);
+say(done.shell === false, "al acabar no queda papel montado");
+say(done.folding === false && done.opacity === "1", "y la ventana se ve entera", `opacidad=${done.opacity}`);
+say(done.ink === 0, "la tinta acaba de entrar y no se queda a medias", "a medias=" + done.ink);
+
+/* --- recoger: el papel vuelve al asa ----------------------------------- */
+await cdp.evaluate(`document.querySelector(".ai-pop__x").click()`);
+await wait(40);
+const gone = await cdp.evaluate(`({
+  hidden: document.querySelector(".ai-pop").hidden,
+  expanded: document.querySelector(".ai-handle").getAttribute("aria-expanded"),
+  shell: !!document.querySelector(".ai-fold"),
+})`);
+say(gone.hidden === true && gone.expanded === "false",
+  "cerrar esconde la ventana en el primer fotograma; el pliegue no la retiene",
+  `hidden=${gone.hidden} expanded=${gone.expanded}`);
+say(gone.shell === true, "y el papel se queda recogiendose encima");
+await wait(500);
+say(await cdp.evaluate(`!document.querySelector(".ai-fold")`), "hasta que no queda nada");
+
+/* --- pulsar dos veces seguidas no deja nada a medias -------------------- */
+await cdp.evaluate(`document.querySelector(".ai-handle").click()`);
+await wait(150);
+await cdp.evaluate(`document.querySelector(".ai-handle").click()`);
+await wait(900);
+const rush = await cdp.evaluate(`({
+  hidden: document.querySelector(".ai-pop").hidden,
+  shell: !!document.querySelector(".ai-fold"),
+  folding: document.querySelector(".ai-pop").classList.contains("is-folding"),
+})`);
+say(rush.hidden === true && rush.shell === false && rush.folding === false,
+  "abrir y cerrar a media animacion no deja la ventana a medias",
+  JSON.stringify(rush));
+
+/* --- con movimiento reducido no se construye pliego -------------------- */
+await cdp.send("Emulation.setEmulatedMedia", {
+  features: [{ name: "prefers-reduced-motion", value: "reduce" }],
+});
+await cdp.evaluate(`document.querySelector(".ai-handle").click()`);
+await wait(60);
+const calm = await cdp.evaluate(`(() => {
+  const pop = document.querySelector(".ai-pop");
+  return {
+    hidden: pop.hidden,
+    shell: !!document.querySelector(".ai-fold"),
+    opacity: getComputedStyle(pop).opacity,
+  };
+})()`);
+say(calm.hidden === false && calm.shell === false && calm.opacity === "1",
+  "con movimiento reducido abre sin pliego y se ve desde el principio",
+  JSON.stringify(calm));
+await cdp.send("Emulation.setEmulatedMedia", { features: [] });
+
 cdp.close();
