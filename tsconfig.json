@@ -23,6 +23,6 @@
     "allowJs": true,
     "checkJs": false
   },
-  "include": ["src", "api", "tools", "vite.config.ts"],
+  "include": ["src", "api", "functions", "tools", "vite.config.ts"],
   "exclude": ["reference", "dist", "node_modules"]
 }

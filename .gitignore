@@ -1,6 +1,8 @@
 node_modules/
 dist/
 .vercel/
+# Estado local de `wrangler pages dev`.
+.wrangler/
 
 # Secretos. El client_secret de Notion vive aquí y no puede entrar en git.
 .env

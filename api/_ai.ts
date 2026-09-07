@@ -163,10 +163,25 @@ export type TargetResult =
  */
 export type BasePolicy = "off" | "public" | "local";
 
+/**
+ * Cierto cuando esto no corre en la máquina de quien desarrolla.
+ *
+ * No se pregunta por un solo proveedor: `VERCEL` la pone Vercel y `CF_PAGES` la
+ * pone Cloudflare Pages. Importa acertar por exceso —si no se reconoce el
+ * entorno, se supone desplegado— porque equivocarse hacia `local` abre las redes
+ * internas del servidor a una URL escrita en los ajustes, y eso es justo lo que
+ * `safeBase` existe para impedir. En desarrollo el plugin de Vite pone
+ * `PLATAFORMA_3I_DEV`, que es la única señal de que sí es una máquina de casa.
+ */
+function deployed(): boolean {
+  if (process.env.PLATAFORMA_3I_DEV === "1") return false;
+  return Boolean(process.env.VERCEL || process.env.CF_PAGES || process.env.NODE_ENV === "production");
+}
+
 export function basePolicy(): BasePolicy {
   const raw = process.env.AI_CUSTOM_PROVIDERS?.trim().toLowerCase();
   if (raw === "off" || raw === "public" || raw === "local") return raw;
-  return process.env.VERCEL ? "public" : "local";
+  return deployed() ? "public" : "local";
 }
 
 const LOCAL_SUFFIX = /(^|\.)(localhost|local|internal|home\.arpa)$/i;

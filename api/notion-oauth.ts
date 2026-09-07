@@ -22,6 +22,18 @@ import type { ApiRequest, ApiResponse } from "./_types";
 
 const NOTION_TOKEN_URL = "https://api.notion.com/v1/oauth/token";
 
+/**
+ * Notion pide las credenciales en un `Authorization: Basic`, que es base64.
+ * `btoa` y no `Buffer`: es lo único de los dos que existe en los tres entornos
+ * donde corre este archivo —Node bajo el plugin de desarrollo, Vercel y el
+ * aislado de Cloudflare—, y así el adaptador de `functions/` no necesita activar
+ * `nodejs_compat`. El `client_id` y el secreto son ASCII, así que no hace falta
+ * pasar por UTF-8.
+ */
+function base64(text: string): string {
+  return btoa(text);
+}
+
 interface OAuthEnv {
   clientId: string;
   clientSecret: string;
@@ -75,7 +87,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse): Promis
     return;
   }
 
-  const credentials = Buffer.from(`${env.clientId}:${env.clientSecret}`).toString("base64");
+  const credentials = base64(`${env.clientId}:${env.clientSecret}`);
 
   let notionRes: Response;
   try {

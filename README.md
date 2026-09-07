@@ -104,6 +104,7 @@ igual medio segundo después de la pasada.
 | `api/_ai.ts`            | a quién se llama y con qué cabeceras; la tabla fija de los tres proveedores |
 | `api/_anthropic.ts`     | traduce ida y vuelta el formato Anthropic, sólo en el servidor  |
 | `api/_registry.ts`      | el registro de models.dev: metadatos y respaldo, con caché de seis horas |
+| `functions/api/[[route]].ts` | el mismo `api/` sobre Cloudflare Pages: un adaptador, no once copias |
 | `smoke/`                | las 153 comprobaciones en un Chrome sin ventana ([su README](smoke/README.md)) |
 
 Dos decisiones que no se ven en el código y conviene no deshacer sin querer:
@@ -505,6 +506,53 @@ simulación con `dt` constante antes de arrancar el bucle real, así que el
 mismo valor da siempre el mismo fotograma. Útil para capturas — con la salvedad
 de que los retardos CSS del revelado ya han vencido cuando se toma la captura,
 así que la estela de palabras no se ve en un fotograma congelado.
+
+## Desplegar
+
+Sirve en Vercel y en Cloudflare Pages sin cambiar un solo handler. Los archivos de
+`api/` están escritos contra la firma de `api/_types.ts` —`query`, `body`,
+`status()`, `json()`, `send()`— y no contra la de un proveedor, así que cada
+entorno sólo aporta el adaptador que la rellena:
+
+| entorno            | quién adapta                    | build                  |
+|--------------------|---------------------------------|------------------------|
+| desarrollo         | `tools/vite-api-plugin.ts`      | `npm run dev`          |
+| Vercel             | nadie: es su convención (`vercel.json`) | `npm run build`, salida `dist` |
+| Cloudflare Pages   | `functions/api/[[route]].ts`    | `npm run build`, salida `dist` |
+
+En Cloudflare, `functions/api/[[route]].ts` recoge todo `/api/*` con una ruta
+comodín y busca el handler en una tabla. Es **un** archivo y no once —lo que haría
+la convención de `functions/`— porque once copias de la misma lógica se separan con
+el primer arreglo. Lo que ese adaptador pone y el entorno no da: `process.env`
+desde `context.env`, y un `res.write()` sobre un `TransformStream`, que es lo que
+mantiene el flujo del asistente saliendo trozo a trozo en vez de de golpe al
+final. `public/_routes.json` deja el resto de las rutas en el CDN: sin él, cada
+imagen despertaría al aislado.
+
+Las variables van tal cual en el panel de cada plataforma (ver `.env.example`).
+Ninguna lleva prefijo `VITE_` a propósito: eso las metería en el paquete que
+descarga el navegador.
+
+Una advertencia sobre `NOTION_OAUTH_REDIRECT_URI`: es la misma URL que autoriza y
+la que canjea el código —`api/notion-oauth.ts` la lee del entorno en los dos
+pasos, no del cuerpo de la petición—, y Notion exige que coincidan carácter por
+carácter. Así que **el valor desplegado es la URL desplegada**, no la de
+desarrollo, y las dos tienen que estar registradas en la integración. Con
+`http://localhost:5173` en producción, Notion rechaza el canje.
+
+`AI_CUSTOM_PROVIDERS` decide hasta dónde llegan las URLs que escribe cada persona
+en los ajustes de IA. Sin configurarla: `local` en desarrollo —para Ollama y LM
+Studio— y `public` desplegado, que cierra las direcciones internas. Desplegado se
+reconoce por `VERCEL`, `CF_PAGES` o `NODE_ENV=production`; un entorno que no se
+reconozca cuenta como desplegado, porque equivocarse hacia `local` abriría la red
+interna del servidor a una URL de los ajustes.
+
+Para probar Cloudflare en casa antes de publicar:
+
+```bash
+npm run build
+npx wrangler pages dev dist
+```
 
 ## El humo
 

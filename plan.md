@@ -102,7 +102,14 @@ otro puerto como hace la referencia: un plugin de Vite (`tools/vite-api-plugin.t
 esos mismos archivos con `ssrLoadModule` y les añade el `req`/`res` que añade Vercel
 —`query`, `body`, `status()`, `json()`, `send()`—. Un solo comando, un solo puerto, cero
 dependencias extra, y el handler se escribe una vez.
-Cloudflare Pages queda como alternativa (`functions/api/`) si hace falta.
+Cloudflare Pages **también sirve**, con un adaptador y no con once copias:
+`functions/api/[[route]].ts` recoge todo `/api/*` con una ruta comodín y llama al
+handler que toque. Es lo que la firma propia de `api/_types.ts` hacía posible desde el
+principio. Lo que hubo que tocar del código común fueron tres cosas, todas mejores así:
+`btoa` en vez de `Buffer` (el único uso de una API de Node que quedaba en `api/`), la
+detección de entorno de `basePolicy()` —que preguntaba sólo por `VERCEL` y ahora supone
+desplegado cuando no reconoce el sitio, que es el lado seguro— y `public/_routes.json`,
+para que el CDN siga sirviendo lo estático.
 
 **D5 · La literatura académica se resuelve con APIs abiertas.**
 No se replica Consensus, Elicit ni Scite: se construyen sus funciones sobre **OpenAlex**
@@ -764,7 +771,7 @@ Ninguno queda bloqueado por las decisiones de este plan.
    porque no es un detalle de la clave: cambia la ruta y la forma del cuerpo. Y una URL
    pegada sin ruta (`https://api.ejemplo.com`, que es como la documentan las APIs que siguen
    a Anthropic) se completa con `/v1`, que es la ruta de todas.
-4. ~~**D4 — Vercel** como destino de despliegue.~~ **Aplicada en la Fase 0** (`vercel.json`).
+4. ~~**D4 — Vercel** como destino de despliegue.~~ **Aplicada en la Fase 0** (`vercel.json`). Cloudflare Pages añadido después (`functions/api/[[route]].ts`), sin tocar ningún handler.
 5. **La tabla de naturaleza → herramientas de §6.2** es una propuesta derivada del catálogo
    del Documento Maestro. Conviene revisarla con Edison antes de la Fase 7, porque de ella
    depende la coherencia que se quiere como diferencia.

@@ -39,6 +39,13 @@ export function apiDev({ dir = "api" }: { dir?: string } = {}): Plugin {
       for (const [key, value] of Object.entries(loadEnv(config.mode, root, ""))) {
         if (process.env[key] === undefined) process.env[key] = value;
       }
+      // La señal de que esto es una máquina de desarrollo y no un despliegue. La
+      // lee `basePolicy()` en `api/_ai.ts` para permitir Ollama y LM Studio en
+      // `http://localhost`. Se pone aquí —el único sitio por el que pasa el
+      // servidor de desarrollo— y no se deduce de la ausencia de las variables de
+      // Vercel o Cloudflare: en un despliegue que no se reconozca, suponer «local»
+      // abriría la red interna del servidor.
+      process.env.PLATAFORMA_3I_DEV = "1";
     },
 
     configureServer(server) {
