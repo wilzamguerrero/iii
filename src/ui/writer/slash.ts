@@ -90,6 +90,12 @@ export const OPTIONS: readonly SlashOption[] = [
     hint: "Por su dirección https",
     draw: () => [icon("page", "ico ico--small")],
   },
+  {
+    id: "attachment",
+    label: "Archivo",
+    hint: "De tu equipo; pesados, hasta 5 GB",
+    draw: () => [icon("page", "ico ico--small")],
+  },
 ];
 
 /** Una figura del menú: texto corto, tamaño según jerarquía. */

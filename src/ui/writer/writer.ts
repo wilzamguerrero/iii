@@ -6,6 +6,8 @@ import { openMenu } from "../dock/menu.ts";
 import { menuItems } from "./contextai.ts";
 import { mountVisual, type Visual } from "./visual.ts";
 import { mountSlash, type Slash } from "./slash.ts";
+import { mountUploadPanel, type UploadPanel } from "./upload.ts";
+import type { UploadedFile } from "../../core/notion/upload.ts";
 import { setLiveDocument } from "../../core/ai/conversation.ts";
 import { clearSelection, selection, type SelectedPage } from "../../core/state/selection.ts";
 import { session } from "../../core/persist/session.ts";
@@ -55,6 +57,9 @@ let structures: Structures | null = null;
 let panel: Panel | null = null;
 let mic: Mic | null = null;
 let slash: Slash | null = null;
+let upload: UploadPanel | null = null;
+/** El input de archivo invisible que abre el selector del sistema. */
+let picker: HTMLInputElement | null = null;
 
 let page: SelectedPage | null = null;
 /** Cada apertura tiene su número: una lectura que llega tarde es de otro documento. */
@@ -226,6 +231,40 @@ function insertStructure(markdown: string, name: string): void {
   if (stateLine) stateLine.title = "Se insertó «" + name + "».";
 }
 
+/* --- subir archivos -------------------------------------------------------- */
+
+/**
+ * Adjuntar archivos al documento.
+ *
+ * Suben por el motor (`core/notion/upload.ts`) directo a la página abierta y
+ * al terminar cada uno deja su línea `📎 nombre` en la hoja, con el id del
+ * bloque que Notion creó: así el guardado siguiente no lo ve como nuevo.
+ */
+function attachFiles(files: readonly File[]): void {
+  const current = page;
+  if (!current || !upload) return;
+  upload.start(files, current.id);
+}
+
+/** Lo que hace el panel cuando un archivo llegó: su línea en la hoja. */
+function uploadedLines(uploaded: readonly UploadedFile[]): void {
+  if (!visual || uploaded.length === 0) return;
+  for (const one of uploaded) {
+    visual.insertAtCaret(`📎 ${one.name}`);
+    // La línea que acaba de entrar lleva id temporal; el bloque de Notion ya
+    // existe. Se re-ancla para que el guardado lo deje quieto.
+    if (one.blockId) visual.anchorLastClip(one.blockId);
+  }
+  changed();
+}
+
+/** Pedir archivos: el selector del sistema, múltiple. */
+function pickFiles(): void {
+  if (!picker) return;
+  picker.value = "";
+  picker.click();
+}
+
 /* --- lo que la revisión necesita saber ------------------------------------ */
 
 function documentNow() {
@@ -252,9 +291,20 @@ function buildBar(): HTMLElement {
     on: { click: () => { shut(); } },
   }, [icon("back")]);
 
+  // Adjuntar: el selector de archivos del sistema, escondido. El botón es el
+  // mismo gesto que dictar —un botón de la barra que alimenta la hoja— y
+  // arrastrarlos encima hace lo mismo sin pasar por la barra.
+  const attach = el("button", {
+    class: "wr__act",
+    text: "Adjuntar",
+    attrs: { type: "button", title: "Subir archivos a este documento" },
+    on: { click: () => { pickFiles(); } },
+  });
+
   return el("header", { class: "wr__bar" }, [
     close, where, stateLine, countLine,
     el("div", { class: "wr__acts" }, [
+      attach,
       structures?.button ?? el("span"),
       panel?.button ?? el("span"),
       ...(mic ? [mic.button] : []),
@@ -287,6 +337,10 @@ function build(): void {
   visual = mountVisual();
   visual.onEdit(() => { changed(); });
 
+  // Los archivos arrastrados sobre la hoja suben como los elegidos en la
+  // barra: mismo motor, mismo panel, misma página abierta.
+  visual.onDropFiles((files) => { attachFiles(files); });
+
   // El menú «/»: la tecla en un bloque vacío lo pide; elegir un bloque lo pone.
   // El editor se entera de las dos cosas —abrir y cerrar— para prestarle el
   // teclado mientras está abierto.
@@ -297,6 +351,12 @@ function build(): void {
   });
   slash.onPick((id) => {
     visual?.setSlashOpen(false);
+    if (id === "attachment") {
+      // El archivo no se escribe: se elige del equipo y sube.
+      pickFiles();
+      visual?.root.focus();
+      return;
+    }
     visual?.applyBlock(id);
     visual?.root.focus();
   });
@@ -330,6 +390,19 @@ function build(): void {
   // Dictar escribe en el documento: el botón de siempre, hablándole al editor.
   mic = visual ? mountMic({ field: visual, className: "mic wr__mic", changed }) : null;
 
+  // Subir archivos: la hoja de progreso y el selector del sistema. El panel
+  // vive colgado del documento —como el asistente vive colgado de la
+  // plataforma— y se ve mientras sube.
+  upload = mountUploadPanel(uploadedLines);
+  picker = el("input", {
+    class: "wr__picker",
+    attrs: { type: "file", multiple: true, "aria-hidden": "true", tabindex: "-1" },
+    on: { change: () => {
+      const files = picker?.files;
+      if (files && files.length > 0) attachFiles([...files]);
+    } },
+  });
+
   notice = el("div", { class: "wr__note", attrs: { hidden: true, role: "status" } });
   bar = buildBar();
 
@@ -355,9 +428,11 @@ function build(): void {
     },
   }, [
     bar, notice,
+    upload?.root ?? el("span"),
     el("div", { class: "wr__body" }, [
       outline.root, buildPaper(), panel.root,
     ]),
+    picker ?? el("span"),
   ]);
 
   document.body.append(root);

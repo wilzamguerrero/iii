@@ -1,0 +1,196 @@
+/* ============================================================
+   La subida de archivos: la hoja de progreso y la línea 📎
+   del editor. La gramática es la del asistente —hoja que baja,
+   filas, texto pequeño de estado— reutilizada porque es la
+   misma acción vista desde otro sitio. Sólo tokens de
+   `tokens.css`: nada de color literal aquí.
+   ============================================================ */
+
+/* --- la hoja ------------------------------------------------ */
+
+.upl {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  translate: -50% 0;
+  z-index: 60;
+  width: min(420px, calc(100vw - 32px));
+  max-height: min(70vh, 480px);
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  border: 1px solid var(--ink-line);
+  border-radius: var(--r-panel);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.upl__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--ink-line);
+}
+
+.upl__title {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.upl__x {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: var(--r-panel);
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.upl__x:hover:not(:disabled) { color: var(--ink); background: var(--tint); }
+.upl__x:disabled { opacity: 0.35; cursor: default; }
+
+.upl__say {
+  margin: 0;
+  padding: 10px 14px 2px;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+
+.upl__say--bad { color: var(--bad); }
+
+.upl__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 14px 14px;
+  overflow-y: auto;
+}
+
+/* --- una fila ----------------------------------------------- */
+
+.upl__one {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border-radius: var(--r-panel);
+}
+
+.upl__one:hover { background: var(--wash); }
+
+.upl__ico {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: var(--r-panel);
+  background: var(--tint);
+  color: var(--ink-soft);
+}
+
+.upl__one--done .upl__ico { color: var(--ink); }
+.upl__one--failed .upl__ico { color: var(--bad); }
+
+.upl__txt {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.upl__name {
+  font-size: 13px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.upl__meta {
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+.upl__one--failed .upl__meta { color: var(--bad); }
+
+/* --- la barra de progreso de la fila ------------------------- */
+
+.upl__row {
+  display: block;
+  height: 2px;
+  width: 100%;
+  margin-top: 4px;
+  border-radius: 2px;
+  background: var(--ink-faint);
+  overflow: hidden;
+}
+
+.upl__fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 2px;
+  background: var(--ink);
+  transition: width 0.25s var(--out-quart);
+}
+
+.upl__one--done .upl__fill { width: 100%; }
+.upl__one--failed .upl__fill { width: 100%; background: var(--bad); }
+.upl__one--zipping .upl__fill { width: 40%; animation: upl-pulse 1.2s ease-in-out infinite alternate; }
+
+@keyframes upl-pulse {
+  from { opacity: 0.35; }
+  to { opacity: 1; }
+}
+
+/* --- la línea 📎 del editor ---------------------------------- */
+
+.vis__clip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  margin: 2px 0;
+  border: 1px solid var(--ink-line);
+  border-radius: var(--r-panel);
+  background: var(--wash);
+  color: var(--ink);
+}
+
+.vis__clip__mark {
+  font-size: 15px;
+  line-height: 1;
+  flex: none;
+}
+
+.vis__clip__name {
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* El arrastre de archivos encima de la hoja: el borde lo dice. */
+.vis.is-dropping {
+  outline: 2px dashed var(--ink-soft);
+  outline-offset: -8px;
+  border-radius: var(--r-panel);
+}
+
+/* El selector del sistema no se ve, pero existe y es alcanzable. */
+.wr__picker {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}

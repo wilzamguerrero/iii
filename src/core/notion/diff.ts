@@ -76,10 +76,29 @@ function lcsIds(a: readonly string[], b: readonly string[]): Set<string> {
 /** Sólo lo que viaja a Notion: forma y texto. El id va aparte. */
 function sameBlock(one: DocBlock, two: DocBlock): boolean {
   if (one.type !== two.type) return false;
+  // Un adjunto no se re-escribe nunca: lo que Notion devuelve de él —la URL
+  // que caduca a la hora, el nombre— ya está y mandarlo de nuevo no crea nada.
+  // Basta con que sea adjunto y el mismo nombre: quieto.
+  if (one.type === "attachment") {
+    return two.type === "attachment" && (one.file?.name ?? one.text) === (two.file?.name ?? two.text);
+  }
   if ((one.level ?? 0) !== (two.level ?? 0)) return false;
   if ((one.language ?? "") !== (two.language ?? "")) return false;
-  if ((one.url ?? "") !== (two.url ?? "")) return false;
+  // La URL de una imagen alojada por Notion (`file`) caduca a la hora: no es
+  // un cambio de bloque. Lo que sí cambia —la dirección externa, o de imagen a
+  // adjunto— sí es un cambio.
+  if (stableUrl(one) !== stableUrl(two)) return false;
   return one.text === two.text;
+}
+
+/** La URL de un bloque de imagen, sin las firmadas por Notion. */
+function stableUrl(block: DocBlock): string {
+  const raw = block.url ?? "";
+  if (!raw) return "";
+  // Las URLs firmadas de Notion viven en `secure.notion-static.com` con una
+  // firma distinta cada vez que se leen; su constante es la ruta, no la firma.
+  const match = /^https:\/\/[^\/]*secure\.notion-static\.com\/([^?]+)/.exec(raw);
+  return match ? `notion:${match[1]}` : raw;
 }
 
 /* --- las operaciones ------------------------------------------------------ */
@@ -123,6 +142,16 @@ export function diffBlocks(baseline: readonly DocBlock[], draft: readonly DocBlo
     const known = oldById.get(block.id);
     const inOrder = known !== undefined && kept.has(block.id);
 
+    // Un adjunto con id de Notion es inamovible: Notion no sabe mover un
+    // bloque de archivo subido y recrearlo sería perderlo —el create no viaja
+    // porque el archivo ya está subido; el delete sí. Se deja en su sitio y
+    // listo: la línea puede quedar en otro orden en el editor, y en Notion se
+    // lee donde nació.
+    if (block.type === "attachment" && known) {
+      after = block.id;
+      continue;
+    }
+
     if (!inOrder) {
       // Nuevo, o movido: se crea en este sitio.
       operations.push({ kind: "create", block, after });
@@ -138,6 +167,8 @@ export function diffBlocks(baseline: readonly DocBlock[], draft: readonly DocBlo
 
   // Los que ya no están, y los que se movieron (recreados arriba).
   for (const block of baseline) {
+    // Un adjunto que la persona borra de la línea sí se borra de Notion: es
+    // el gesto explícito de quitarlo del documento.
     if (newIds.has(block.id) && kept.has(block.id)) continue;
     if (!newIds.has(block.id) || !kept.has(block.id)) {
       operations.push({ kind: "delete", block });

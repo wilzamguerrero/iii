@@ -66,7 +66,13 @@ export function apiDev({ dir = "api" }: { dir?: string } = {}): Plugin {
         try {
           const apiReq = req as ApiRequest;
           apiReq.query = parseQuery(url);
-          apiReq.body = await parseBody(req);
+          // Las subidas de archivos viajan como multipart y el handler las
+          // reenvía como stream: leerlas aquí primero sería bufferizarlas —el
+          // tope de `MAX_BODY_BYTES` rompería los chunks de 4 MiB con su
+          // boundary— y destruir la petición a mitad de subida. El resto de
+          // endpoints esperan JSON, y se parsea como siempre.
+          const isStream = isStreamBody(name, req);
+          if (!isStream) apiReq.body = await parseBody(req);
 
           const module = await server.ssrLoadModule(`/${dir}/${name}.ts`);
           const handler = (module.default ?? module.handler) as ApiHandler | undefined;
@@ -93,6 +99,14 @@ export function apiDev({ dir = "api" }: { dir?: string } = {}): Plugin {
 }
 
 /* ------------------------------------------------------------------ adaptador */
+
+/** Cierto cuando este handler lee el cuerpo como stream, no como JSON. */
+function isStreamBody(name: string, req: IncomingMessage): boolean {
+  const type = req.headers["content-type"] ?? "";
+  // Sólo la subida: el multipart que lleva un chunk de archivo. Los demás
+  // cuerpos multipart, si los hubiera, se leen igual que siempre.
+  return name === "notion-upload" && type.includes("multipart/form-data");
+}
 
 function adaptResponse(res: ServerResponse): ApiResponse {
   const api = res as ApiResponse;

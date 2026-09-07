@@ -34,7 +34,7 @@ import type { RichText } from "./types.ts";
 export interface DocBlock {
   /** Id de Notion, o `tmp-` mientras no exista. */
   id: string;
-  type: "heading" | "paragraph" | "bullet" | "number" | "quote" | "divider" | "code" | "image";
+  type: "heading" | "paragraph" | "bullet" | "number" | "quote" | "divider" | "code" | "image" | "attachment";
   /** El texto completo del bloque, plano. */
   text: string;
   /** Nivel 1-3 del título. */
@@ -43,6 +43,8 @@ export interface DocBlock {
   language?: string;
   /** URL de la imagen. */
   url?: string;
+  /** Un archivo adjunto: su nombre y qué clase de bloque es en Notion. */
+  file?: { name: string; kind: "image" | "video" | "audio" | "pdf" | "file" };
   /** Lo que Notion dijo del bloque, para no perder lo que no sabemos leer. */
   raw?: unknown;
 }
@@ -82,6 +84,11 @@ export function notionBodyOf(block: DocBlock): Record<string, unknown> | null {
       return block.url
         ? { image: { type: "external", external: { url: block.url } } }
         : null;
+    case "attachment":
+      // Un adjunto que ya vive en Notion no se re-escribe: el diff lo deja
+      // quieto. Si llegara aquí con id temporal sería un error de la
+      // traducción, y mejor no mandar nada que mandar un bloque roto.
+      return null;
   }
 }
 
@@ -122,6 +129,18 @@ export function markdownToLines(markdown: string): [DocBlock, number][] {
       }
       at += 1;
       out.push([{ id: "tmp", type: "code", text: body.join("\n"), language }, born]);
+      continue;
+    }
+
+    // Un adjunto: la línea `📎 nombre` que dejó un archivo subido. Si la línea
+    // trae su id de Notion, el bloque ya existe allí —el diff lo dejará
+    // quieto—; si no, es un adjunto recién elegido y quien lo sube es el
+    // motor de subida, no el guardado del documento.
+    const clip = /^📎\s+(.+)$/.exec(raw);
+    if (clip) {
+      const name = (clip[1] ?? "").trim();
+      out.push([{ id: "tmp", type: "attachment", text: name, file: { name, kind: "file" } }, born]);
+      at += 1;
       continue;
     }
 
@@ -218,6 +237,12 @@ function richOf(block: RawBlock): RichText[] | undefined {
   return part?.rich_text;
 }
 
+/** El texto plano de la caption de un bloque de medios. */
+function captionOf(raw: RawBlock): string {
+  const part = raw[raw.type] as { caption?: RichText[] } | undefined;
+  return (part?.caption ?? []).map((one) => one.plain_text ?? "").join("").trim();
+}
+
 /**
  * Un bloque crudo a nuestro modelo. Lo que no se sabe leer se conserva tal
  * cual en `raw` —el diff lo reescribirá sin tocarlo— y su texto plano, si
@@ -237,6 +262,26 @@ export function blockOf(raw: RawBlock): DocBlock {
   if (raw.type === "code") {
     const part = raw.code as { language?: string } | undefined;
     return { ...base, type: "code", text: plain(richOf(raw)), language: part?.language };
+  }
+
+  // Los adjuntos: bloques de medios con archivo de Notion dentro (subidos por
+  // la plataforma o puestos a mano en Notion). Se guardan como `attachment`
+  // con su nombre —la URL que trae `file` caduca a la hora— y el diff los
+  // deja quietos: no se re-suben ni se re-escriben.
+  if (raw.type === "video" || raw.type === "file" || raw.type === "pdf" || raw.type === "audio") {
+    const kind = raw.type as "video" | "file" | "pdf" | "audio";
+    const media = raw[raw.type] as
+      | { type?: string; file?: { url?: string }; external?: { url?: string }; name?: string; caption?: RichText[] }
+      | undefined;
+    const name = (media?.name ?? captionOf(raw) ?? "").trim();
+    // El texto del bloque es el nombre: es lo que se ve en el editor y lo que
+    // se busca. Con uno vacío se usa el tipo, para no perder la línea.
+    return {
+      ...base,
+      type: "attachment",
+      text: name || `archivo-${kind}`,
+      file: { name: name || `archivo-${kind}`, kind: kind === "pdf" ? "pdf" : kind },
+    };
   }
 
   const text = plain(richOf(raw));
@@ -269,6 +314,11 @@ export function blockMarkdown(block: DocBlock): string {
       return `\`\`\`${block.language ?? "markdown"}\n${block.text}\n\`\`\``;
     case "image":
       return `![${block.text}](${block.url ?? ""})`;
+    case "attachment":
+      // El adjunto en el editor: la línea que lo representa. No es un enlace
+      // real —la URL de Notion caduca a la hora— sino el nombre tal cual se
+      // subió, en la gramática `📎 nombre` que `markdownToLines` reconoce.
+      return `📎 ${block.file?.name ?? block.text}`;
     case "paragraph":
       return block.text;
   }

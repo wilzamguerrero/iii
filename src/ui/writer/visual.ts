@@ -63,6 +63,10 @@ export interface Visual {
   dictate(said: string): void;
   /** El menú «/» eligió un bloque: el bloque vacío del cursor pasa a ser eso. */
   applyBlock(id: string): void;
+  /** La línea 📎 que acaba de entrar recibe el id real de su bloque de Notion. */
+  anchorLastClip(blockId: string): void;
+  /** Archivos arrastrados sobre la hoja: la plataforma los cuelga. */
+  onDropFiles(run: (files: readonly File[]) => void): void;
 }
 
 const TAGS: Record<VisualKind, string> = {
@@ -176,6 +180,20 @@ export function mountVisual(): Visual {
             attrs: { src: block.url ?? "", alt: block.text, loading: "lazy", referrerpolicy: "no-referrer" },
           }),
         ]);
+      case "attachment": {
+        // El adjunto se lee como un nodo `figure` con el nombre y su clase: no
+        // es un enlace —la URL de Notion caduca a la hora—, es la línea que
+        // dice qué archivo vive ahí. `markdownToLines` lo vuelve a leer por su
+        // texto, así que el nombre es el bloque entero.
+        const name = block.file?.name ?? block.text;
+        return el("figure", {
+          class: "vis__clip",
+          attrs: { "data-b": id ?? "", "data-clip": "1" },
+        }, [
+          el("span", { class: "vis__clip__mark", text: "📎" }),
+          el("span", { class: "vis__clip__name", text: name }),
+        ]);
+      }
       case "bullet":
       case "number": {
         const tag = block.type === "bullet" ? "ul" : "ol";
@@ -227,6 +245,12 @@ export function mountVisual(): Visual {
         return items.join("\n");
       }
       case "FIGURE": {
+        // El adjunto y la imagen comparten etiqueta: el adjunto se reconoce
+        // por su `data-clip` y se escribe con su gramática 📎.
+        if (node.getAttribute("data-clip")) {
+          const name = node.querySelector(".vis__clip__name");
+          return `📎 ${name ? name.textContent ?? "" : plainOf(node)}${mark}`;
+        }
         const img = node.querySelector("img");
         const src = img ? img.getAttribute("src") ?? "" : "";
         const alt = img ? img.getAttribute("alt") ?? "" : "";
@@ -380,6 +404,46 @@ export function mountVisual(): Visual {
     sel?.addRange(range);
   }
 
+  /* --- los archivos sobre la hoja --------------------------------------- */
+
+  /**
+   * Arrastrar archivos encima: el borde lo avisa y soltarlos los cuelga. Va
+   * aquí —y no en el writer— porque lo que se arrastra es «hacia el papel», y
+   * la gramática del arrastre es la del editor que está debajo.
+   */
+  const dropListeners = new Set<(files: readonly File[]) => void>();
+  let dragging = 0;
+
+  root.addEventListener("dragenter", (event) => {
+    if (!event.dataTransfer?.types.includes("Files")) return;
+    event.preventDefault();
+    dragging += 1;
+    root.classList.add("is-dropping");
+  });
+  root.addEventListener("dragover", (event) => {
+    if (!event.dataTransfer?.types.includes("Files")) return;
+    event.preventDefault();
+  });
+  root.addEventListener("dragleave", () => {
+    dragging = Math.max(0, dragging - 1);
+    if (dragging === 0) root.classList.remove("is-dropping");
+  });
+  root.addEventListener("drop", (event) => {
+    const files = event.dataTransfer?.files;
+    if (!files || files.length === 0) return;
+    event.preventDefault();
+    dragging = 0;
+    root.classList.remove("is-dropping");
+    for (const run of [...dropListeners]) run([...files]);
+  });
+
+  /** La última línea 📎 que entró: para anclarla a su bloque de Notion. */
+  function anchorLastClip(blockId: string): void {
+    const clips = [...root.querySelectorAll<HTMLElement>(".vis__clip")];
+    const last = clips[clips.length - 1];
+    if (last) last.setAttribute("data-b", blockId);
+  }
+
   /* --- lo que se ofrece por fuera -------------------------------------- */
 
   return {
@@ -407,6 +471,10 @@ export function mountVisual(): Visual {
     setSlashOpen(on) {
       slash = on;
     },
+    onDropFiles(run) {
+      dropListeners.add(run);
+    },
+    anchorLastClip,
     selected() {
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed) return "";

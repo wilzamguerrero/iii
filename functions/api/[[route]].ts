@@ -39,6 +39,7 @@ import githubDevice from "../../api/github-device.ts";
 import health from "../../api/health.ts";
 import notion from "../../api/notion.ts";
 import notionOauth from "../../api/notion-oauth.ts";
+import notionUpload from "../../api/notion-upload.ts";
 
 /** Los endpoints, por el nombre con el que los pide el cliente. */
 const HANDLERS: Readonly<Record<string, ApiHandler>> = {
@@ -49,6 +50,7 @@ const HANDLERS: Readonly<Record<string, ApiHandler>> = {
   health,
   notion,
   "notion-oauth": notionOauth,
+  "notion-upload": notionUpload,
 };
 
 /** Tope del cuerpo, el mismo que el plugin de desarrollo. */
@@ -92,11 +94,18 @@ async function parseBody(request: Request): Promise<unknown> {
   const method = request.method.toUpperCase();
   if (method === "GET" || method === "HEAD") return undefined;
 
+  // Las subidas de archivos viajan como multipart y su handler reenvía el
+  // cuerpo como stream: leerlas aquí primero sería bufferizarlas y el tope
+  // rompería los chunks. El handler lee `request` directo, igual que en el
+  // plugin de desarrollo.
+  const type = request.headers.get("content-type") ?? "";
+  if (type.includes("multipart/form-data")) return undefined;
+
   const raw = await request.text();
   if (!raw) return undefined;
   if (raw.length > MAX_BODY_BYTES) throw new Error("Cuerpo demasiado grande.");
 
-  if (!(request.headers.get("content-type") ?? "").includes("application/json")) return raw;
+  if (!type.includes("application/json")) return raw;
   try {
     return JSON.parse(raw);
   } catch {
@@ -246,6 +255,10 @@ export const onRequest: PagesFunction = async (context) => {
     url: url.pathname + url.search,
     query: parseQuery(url),
     body,
+    // El cuerpo sin parsear —las subidas multipart—: el handler lo reenvía
+    // como stream y aquí está el `Request` de verdad que sabe hacerlo. En los
+    // otros entornos el `req` de Node ya es el stream por derecho propio.
+    rawRequest: context.request,
   } as unknown as ApiRequest;
 
   const { res, response } = makeResponse();

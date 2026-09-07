@@ -5,6 +5,7 @@ import { onMade } from "./reload.ts";
 import { mountTree } from "./tree.ts";
 import { openBegin } from "../start/open.ts";
 import { NotionRequestError } from "../../core/notion/client.ts";
+import { uploadFiles } from "../../core/notion/upload.ts";
 import {
   createPage, createProject, deleteNode, readChildren, renameNode,
   UNTITLED_PAGE, UNTITLED_PROJECT, type TreeNode,
@@ -376,6 +377,12 @@ export function mountFolders(options: FoldersOptions): Folders {
       items.push({ label: "Abrir en otra pestaña", run: () => { openElsewhere(node); } });
     }
 
+    // Adjuntar: los archivos de la persona, colgados en la página de esta
+    // baldosa. Sube igual que desde el documento —mismo motor— pero sin abrir
+    // el editor: quien ordena su proyecto desde la retícula también suelta ahí
+    // sus entrevistas y sus fotos.
+    items.push({ label: "Adjuntar archivos", run: () => { pickInto(node); } });
+
     items.push({ label: "Renombrar", run: edit });
     items.push({
       label: "Eliminar",
@@ -390,6 +397,52 @@ export function mountFolders(options: FoldersOptions): Folders {
     });
 
     return items;
+  }
+
+  /**
+   * El selector de archivos para la baldosa. Uno solo para toda la retícula:
+   * el que lo abre es el último, y si llega a haber dos menús abiertos el
+   * sistema ya sólo deja uno.
+   */
+  let picker: HTMLInputElement | null = null;
+
+  function pickInto(node: TreeNode): void {
+    if (!picker) {
+      picker = el("input", {
+        class: "off",
+        attrs: { type: "file", multiple: true, "aria-hidden": "true", tabindex: "-1" },
+      });
+      document.body.append(picker);
+      picker.addEventListener("change", () => {
+        const files = picker?.files;
+        if (files && files.length > 0) void filesInto([...files], pickerTarget);
+      });
+    }
+    pickerTarget = node;
+    picker.value = "";
+    picker.click();
+  }
+
+  let pickerTarget: TreeNode | null = null;
+
+  async function filesInto(files: readonly File[], target: TreeNode | null): Promise<void> {
+    if (!target) return;
+    try {
+      // El aviso va en la línea de estado de la retícula, que es donde ya
+      // hablan los errores de red: «subiendo…» y al final «quedaron».
+      say(files.length === 1 ? "Subiendo un archivo…" : `Subiendo ${files.length} archivos…`);
+      const uploaded = await uploadFiles(files, target.id, (items) => {
+        const done = items.filter((one) => one.status === "done").length;
+        say(`Subiendo… ${done} de ${items.length}`);
+      });
+      say(
+        uploaded.length === 1
+          ? "El archivo quedó en la página."
+          : `Quedaron ${uploaded.length} archivos en la página.`,
+      );
+    } catch (error) {
+      say(reason(error, "No se pudo subir."), true);
+    }
   }
 
   /** El clic derecho abre donde está el puntero; el teclado, bajo la baldosa. */

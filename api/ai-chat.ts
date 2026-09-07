@@ -28,6 +28,17 @@ const MAX_MODEL_LENGTH = 200;
  */
 const REPLY_TIMEOUT_MS = 120_000;
 
+/**
+ * El tope de tokens de la respuesta, para que el proveedor no ponga el suyo.
+ *
+ * Pasó de verdad: sin este campo, GitHub Models y NVIDIA cortaban la respuesta
+ * a los ~100 tokens de su tope por defecto —el asistente decía «Haz esto:» y
+ * la lista nunca llegaba—. Con 4096 la respuesta completa cabe en todos los
+ * modelos de la tabla; pasarse del tope de un modelo concreto es un 400 que el
+ * proveedor explica, y ahí se elige otro modelo o se pide algo más corto.
+ */
+const MAX_TOKENS = 4096;
+
 type Role = "system" | "user" | "assistant";
 const ROLES = new Set<Role>(["system", "user", "assistant"]);
 
@@ -113,7 +124,7 @@ const handler: ApiHandler = async (req, res) => {
   // cliente manda siempre el de OpenAI: la diferencia no sube hasta el navegador.
   const payload: Record<string, unknown> = target.format === "anthropic"
     ? toAnthropicBody(model, messages, stream)
-    : { model, messages, ...(stream ? { stream: true } : {}) };
+    : { model, messages, max_tokens: MAX_TOKENS, ...(stream ? { stream: true } : {}) };
 
   try {
     const upstream = await fetchWithFallback(target.chatUrls, {
