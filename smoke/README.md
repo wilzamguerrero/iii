@@ -2,7 +2,7 @@
 
 Siete guiones que abren la plataforma de verdad en un Chrome sin ventana, la
 manejan como la manejaría una persona y comprueban lo que queda en la pantalla.
-**169 comprobaciones.**
+**180 comprobaciones.**
 
 ```
 npm run smoke
@@ -44,8 +44,10 @@ pasan de una corrida a otra.
 1. **Entrada** — el documento se monta cerrado, se abre al elegir una página,
    trae el texto de Notion, cuenta palabras, saca los apartados y se guarda solo.
 2. **Lectura** — leer cambia de hoja, los apartados llevan hasta su sitio, las
-   tres estructuras del reglamento se insertan una sola vez, y lo marcado ofrece
-   Cuestionar / Explicar / Precisar.
+   tres estructuras del reglamento se insertan una sola vez, lo marcado ofrece
+   Cuestionar / Explicar / Precisar, el clic derecho abre el menú de la IA con
+   las acciones de investigación, y una imagen del documento se ve en la
+   vista de lectura.
 3. **Revisión** — la columna de la derecha: sin credencial lo dice y no gasta una
    petición; con ella marca faltas, respaldos y flojos sobre el texto.
 4. **Arranque** — de la intención al proyecto: la IA propone nombre y preguntas,
@@ -56,7 +58,9 @@ pasan de una corrida a otra.
    más redondo que un panel.
 6. **Asistente** — se abre, dice qué ve, manda método + contexto + pregunta, ve
    **lo que se acaba de escribir** sin volver a leer Notion, se mueve con las
-   flechas y recuerda dónde se dejó. Y su ventana se pliega: ocho hojas de papel
+   flechas y recuerda dónde se dejó. La respuesta llega compuesta y con sus
+   acciones —Copiar, Añadir al documento—, y añadir entra de verdad en el
+   documento. Y su ventana se pliega: ocho hojas de papel
    en blanco que se despliegan, con la ventana montada y anunciada en el primer
    fotograma —el adorno nunca va delante del estado—, sin quedarse a medias al
    pulsar dos veces seguidas, y sin construir nada con movimiento reducido.
@@ -69,9 +73,10 @@ pasan de una corrida a otra.
 Sólo lo que está fuera de la plataforma, y por una razón cada uno:
 
 - **Notion** (`doubles/notion.js`) — un `fetch` falso sobre `/api/notion` con un
-  proyecto y sus páginas. Guardar contra Notion de verdad en cada corrida
-  ensuciaría un espacio real, y la asimetría del modelo (se escribe
-  `{text:{content}}`, se lee `{plain_text}`) queda igual de probada.
+  documento y sus bloques nativos, que aplica el diff —updates, creates con su
+  ancla, deletes— igual que haría Notion y devuelve los bloques con
+  `plain_text`, como los devuelve la API de verdad. Guardar contra Notion real
+  en cada corrida ensuciaría un espacio real.
 - **El modelo** (`arranque.js`, `asistente.js`, `revision.js`) — un `/api/ai-chat`
   que devuelve un SSE en trozos, como el de verdad. Se prueba nuestro lado: qué
   se le manda, qué se hace con lo que contesta. Un modelo real daría una

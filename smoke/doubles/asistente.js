@@ -47,16 +47,20 @@
       return sse(ANSWER);
     }
 
-    /* Se apunta cada lectura de Notion para poder probar que el asistente no
-       vuelve a pedir el documento que el editor ya tiene delante. */
-    if (url.indexOf("/api/notion") === 0) {
-      const q = new URL(url, location.origin).searchParams;
-      const endpoint = q.get("endpoint") || "";
-      const method = q.get("method") || "GET";
-      if (method === "GET" && endpoint.indexOf("/blocks/") === 0 && endpoint.indexOf("/children") < 0) {
-        window.__reads.push(endpoint);
-      }
+  /* Se apunta cada lectura del contenido de Notion para poder probar que el
+     asistente no vuelve a pedir el documento que el editor ya tiene delante:
+     leer una pagina hoy son dos peticiones —la pagina y sus bloques—. */
+  if (url.indexOf("/api/notion") === 0) {
+    const q = new URL(url, location.origin).searchParams;
+    const endpoint = q.get("endpoint") || "";
+    const method = q.get("method") || "GET";
+    if (method === "GET" && endpoint.indexOf("/pages/") === 0) {
+      window.__reads.push(endpoint);
     }
+    if (method === "GET" && endpoint.indexOf("/children") > 0) {
+      window.__reads.push(endpoint);
+    }
+  }
 
     return before(input, init);
   };

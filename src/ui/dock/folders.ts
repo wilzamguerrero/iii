@@ -27,9 +27,10 @@ import { clearSelection, selectPage, selection } from "../../core/state/selectio
  * son treinta renglones iguales que hay que leer. La retícula además aprovecha
  * el ancho, que es lo que sobra en una franja baja y ancha.
  *
- * Cada carpeta es un `toggle` de Notion y cada documento un bloque `code` en
- * markdown dentro (plan.md D2). Esto no es un visor de Notion: sólo muestra lo
- * que la plataforma crea, y lo demás que haya en esa página se deja en paz.
+ * Cada carpeta y cada documento es una página de Notion (ramificación de la
+ * decisión D2 en la rama DEV), con bloques nativos dentro. Esto no es un
+ * visor de Notion: sólo muestra lo que la plataforma crea, y lo demás que
+ * haya en esa página se deja en paz.
  *
  * Se lee una carpeta al entrar en ella y no se guarda lo leído: Notion admite
  * unas tres peticiones por segundo y nadie navega tan rápido, así que la lista
@@ -277,31 +278,53 @@ export function mountFolders(options: FoldersOptions): Folders {
 
   /* --- lo que se puede hacer con una baldosa ------------------------------ */
 
-  /** Una carpeta se entra; un documento se abre y el asistente lo lee. */
+  /**
+   * Una carpeta se entra; un documento se abre y el asistente lo lee.
+   *
+   * En el modelo de páginas, la baldosa no dice cuál de las dos es: una página
+   * puede tener dentro páginas (carpeta) o bloques (documento). Al pulsarla
+   * se entra —la misma lectura que haría falta de todos modos— y si dentro no
+   * hay páginas, es un documento y se abre el editor. Es como se comporta
+   * Notion mismo: ninguna página es «sólo carpeta» de nacimiento.
+   */
   function openNode(node: TreeNode): void {
     if (node.kind === "project") { enter(node); return; }
-    selectPage({
-      id: node.id,
-      name: node.name,
-      parentId: node.parentId,
-      ...(atRoot() ? {} : { projectName: here().name }),
-    });
+    void (async () => {
+      try {
+        const kids = await readChildren(token, node.id);
+        if (kids.length > 0) { enter(node); return; }
+        selectPage({
+          id: node.id,
+          name: node.name,
+          parentId: node.parentId,
+          ...(atRoot() ? {} : { projectName: here().name }),
+        });
+      } catch (cause) {
+        // Sin saber qué hay dentro, abrirlo como documento es lo mejor que
+        // queda: el editor sabrá contar si no se pudo leer.
+        selectPage({
+          id: node.id,
+          name: node.name,
+          parentId: node.parentId,
+          ...(atRoot() ? {} : { projectName: here().name }),
+        });
+        void cause;
+      }
+    })();
   }
 
   /**
-   * Un documento pulsado en el árbol: se abre y la retícula se va a la carpeta
-   * donde vive. El árbol dice dónde está cada cosa, así que abrir desde ahí tiene
-   * que dejar a la vista lo que hay alrededor.
+   * Un documento pulsado en el árbol: la retícula se va a la carpeta donde
+   * vive y se abre. El árbol dice dónde está cada cosa, así que abrir desde ahí
+   * tiene que dejar a la vista lo que hay alrededor.
+   *
+   * Con páginas, la misma pregunta que la baldosa: dentro puede haber páginas
+   * o texto, y el árbol no lo sabe —sabe el camino, no el contenido—. Se
+   * entra al camino del padre y la página se decide como en la retícula.
    */
   function openFromTree(node: TreeNode, at: readonly Crumb[]): void {
     goPath(at);
-    const folder = at[at.length - 1];
-    selectPage({
-      id: node.id,
-      name: node.name,
-      parentId: node.parentId,
-      ...(at.length > 1 && folder ? { projectName: folder.name } : {}),
-    });
+    openNode(node);
   }
 
   /**

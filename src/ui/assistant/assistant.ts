@@ -2,6 +2,7 @@ import { el, render } from "../dom.ts";
 import { makeMovable, type Movable } from "../drag.ts";
 import { origamiSvg } from "../origami.ts";
 import { mountFold, type Fold } from "./fold.ts";
+import { answerTurn } from "./answer.ts";
 import { onMenuVisible } from "../afterIntro.ts";
 import {
   activeProvider, aiConfig, hasCredential, probeServerKeys,
@@ -66,9 +67,7 @@ let fold: Fold | null = null;
 function turnLine(role: "user" | "assistant" | "system", text: string): HTMLElement {
   const kind = role === "user" ? " ai-turn--mine" : "";
   return el("div", { class: `ai-turn${kind}`, text });
-}
-
-function emptyState(): HTMLElement {
+}function emptyState(): HTMLElement {
   return el("div", { class: "ai-empty" }, [
     el("p", { class: "ai-empty__lead", text:
       "Pregunta lo que quieras del proyecto. No lo va a escribir por ti: " +
@@ -89,7 +88,10 @@ function paintLog(): void {
     render(log, emptyState());
     return;
   }
-  render(log, ...turns.map((turn) => turnLine(turn.role, turn.content)));
+  // Las respuestas se componen como el modo lectura y traen sus acciones; lo
+  // propio de la persona, tal cual lo escribió.
+  render(log, ...turns.map((turn) =>
+    turn.role === "assistant" ? answerTurn(turn.content) : turnLine(turn.role, turn.content)));
   log.scrollTop = log.scrollHeight;
 }
 
@@ -167,12 +169,16 @@ async function submit(text: string): Promise<void> {
   if (conversation().length === 0) render(box);
   box.append(turnLine("user", question));
 
-  const answer = el("div", { class: "ai-turn ai-turn--wait", text: "…" });
+  // La respuesta crece ya compuesta: mientras llega va tomando forma de
+  // documento —títulos, listas— igual que tendrá al quedar pintada.
+  let live: HTMLElement | null = el("div", { class: "ai-turn ai-turn--wait", text: "…" });
+  const answer = live;
   box.append(answer);
   box.scrollTop = box.scrollHeight;
   busy(true);
 
   let full = "";
+  let composed = "";
   try {
     await ask(question, {
       onDelta: (chunk) => {
@@ -180,23 +186,40 @@ async function submit(text: string): Promise<void> {
         // se le arrastra la vista hacia abajo con cada trozo.
         const near = box.scrollHeight - box.scrollTop - box.clientHeight < NEAR_BOTTOM;
         full += chunk;
-        answer.className = "ai-turn";
-        answer.textContent = full;
+        // Se compone en cada bloque cerrado: rearmar todo el DOM por cada
+        // trozo de diez caracteres sería tirar el nodo a cada paso. Con una
+        // respuesta larga, cada doble salto de línea ya es un buen momento.
+        const tail = full.slice(-64);
+        if (composed === full || (!/\n\n/.test(tail) && full.length - composed.length < 96)) {
+          if (near) box.scrollTop = box.scrollHeight;
+          return;
+        }
+        composed = full;
+        const fresh = answerTurn(full);
+        answer.replaceWith(fresh);
+        live = fresh;
         if (near) box.scrollTop = box.scrollHeight;
       },
     });
 
-    if (!full.trim()) {
-      answer.className = "ai-turn ai-turn--bad";
-      answer.textContent = "El proveedor no devolvió texto. Prueba con otro modelo.";
+    // Lo último, compuesto y con acciones, una vez terminó de llegar.
+    if (live) live.replaceWith(answerTurn(full));
+    live = null;
+
+    if (!full.trim() && !box.querySelector(".ai-turn--answer")) {
+      box.append(el("div", { class: "ai-turn ai-turn--bad", text:
+        "El proveedor no devolvió texto. Prueba con otro modelo." }));
     }
   } catch (error) {
     const stopped = error instanceof DOMException && error.name === "AbortError";
-    answer.className = "ai-turn ai-turn--bad";
-    answer.textContent = stopped
-      ? (full.trim() ? full : "Detenido.")
-      : (error instanceof Error ? error.message : "No se pudo preguntar.");
-    if (stopped && full.trim()) answer.className = "ai-turn";
+    if (live) {
+      live.replaceWith(stopped && full.trim()
+        ? answerTurn(full)
+        : el("div", { class: "ai-turn ai-turn--bad", text: stopped
+          ? (full.trim() ? full : "Detenido.")
+          : (error instanceof Error ? error.message : "No se pudo preguntar.") }));
+      live = null;
+    }
   } finally {
     busy(false);
   }

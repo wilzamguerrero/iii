@@ -51,9 +51,10 @@ export function headingsOf(text: string): Heading[] {
   return out;
 }
 
-/** Un título se lee sin sus marcas: en el índice estorban. */
+/** Un título se lee sin sus marcas —ni las de formato ni el id de bloque—. */
 function strip(text: string): string {
   return text
+    .replace(/<!--b:[a-f0-9-]+-->\s*$/, "")
     .replace(/`([^`]+)`/g, "$1")
     .replace(/\*\*([^*]+)\*\*/g, "$1")
     .replace(/\*([^*]+)\*/g, "$1")
@@ -64,7 +65,7 @@ function strip(text: string): string {
 
 /* --- lo de dentro de una línea --------------------------------------------- */
 
-/** Negrita, cursiva, código y enlaces. Nada más: no hay más en un proyecto. */
+/** Negrita, cursiva, código, enlaces e imágenes. Lo que un proyecto usa. */
 const INLINE =
   /\*\*([^*]+)\*\*|__([^_]+)__|\*([^*\n]+)\*|_([^_\n]+)_|`([^`]+)`|\[([^\]]+)\]\(([^)\s]+)\)/g;
 
@@ -72,11 +73,20 @@ const INLINE =
  * Sólo se enlaza lo que se puede abrir sin peligro. El texto del documento puede
  * venir de un modelo, y un `javascript:` metido en un enlace sería suyo y no de la
  * persona: cuando el destino no convence, queda el texto y se pierde el enlace.
+ *
+ * Las imágenes siguen la misma regla y una más: sólo `https`, porque una
+ * imagen se pega en un `<img>` y el navegador la pide sin preguntar.
  */
-function safeHref(url: string): string | null {
+function safeHref(url: string, image = false): string | null {
   const clean = url.trim();
-  return /^(https?:\/\/|mailto:)/i.test(clean) ? clean : null;
+  const ok = image
+    ? /^https:\/\//i.test(clean)
+    : /^(https?:\/\/|mailto:)/i.test(clean);
+  return ok ? clean : null;
 }
+
+/** Una imagen en su propia línea: `![alt](https://…)`. */
+const IMAGE = /^!\[([^\]]*)\]\(([^)\s]+)\)$/;
 
 function inline(text: string): Node[] {
   const out: Node[] = [];
@@ -142,7 +152,9 @@ function block(
  * de verdad de anidar, aquí es donde se anida.
  */
 export function renderMarkdown(text: string): HTMLElement[] {
-  const lines = text.split("\n");
+  // El id de bloque viaja con la línea para el diff del guardado; al componer
+  // no pinta nada y al traducir no dice nada: se quita aquí, una sola vez.
+  const lines = text.split("\n").map((line) => line.replace(/<!--b:[a-f0-9-]+-->\s*$/, ""));
   const out: HTMLElement[] = [];
   let at = 0;
 
@@ -150,6 +162,27 @@ export function renderMarkdown(text: string): HTMLElement[] {
     const raw = lines[at] ?? "";
 
     if (!raw.trim()) { at += 1; continue; }
+
+    // Una imagen en su línea es una figura, no texto.
+    const picture = IMAGE.exec(raw.trim());
+    if (picture) {
+      const url = safeHref(picture[2] ?? "", true);
+      if (url) {
+        out.push(el("figure", { class: "doc__fig", attrs: { "data-line": String(at) } }, [
+          el("img", {
+            class: "doc__img",
+            attrs: {
+              src: url,
+              alt: picture[1] ?? "",
+              loading: "lazy",
+              referrerpolicy: "no-referrer",
+            },
+          }),
+        ]));
+      }
+      at += 1;
+      continue;
+    }
 
     const fence = FENCE.exec(raw);
     if (fence) {

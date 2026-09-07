@@ -92,8 +92,33 @@ say(asked.sawFresh === true, "y el asistente ve lo que se acaba de escribir, no 
 say(asked.notionReads === 0, "sin volver a pedirselo a Notion", "lecturas=" + asked.notionReads);
 say(asked.sawIntent && asked.sawName, "con la intencion y el documento que hay delante",
   `intencion=${asked.sawIntent} documento=${asked.sawName}`);
-say(asked.turns.length === 2 && asked.turns[1].indexOf("ai-turn |") === 0,
+say(asked.turns.length === 2 && asked.turns[1].indexOf("ai-turn ai-turn--answer") === 0,
   "la respuesta se lee en la ventana", JSON.stringify(asked.turns[1] || "").slice(0, 70));
+
+/* --- la respuesta trae acciones, como en un IDE ------------------------- */
+const acts = await cdp.evaluate(`(() => {
+  const one = document.querySelector(".ai-turn--answer");
+  return {
+    acts: one ? [...one.querySelectorAll(".ai-turn__acts .lnkbtn")].map((b) => b.textContent) : [],
+    composed: one ? !!one.querySelector(".ai-md") : false,
+  };
+})()`);
+say(acts.composed === true, "la respuesta llega compuesta, no como texto plano");
+say(JSON.stringify(acts.acts) === JSON.stringify(["Copiar", "Añadir al documento"]),
+  "con copiar y anadir al documento", JSON.stringify(acts.acts));
+
+/* anadir la respuesta al documento la pega donde este el cursor */
+const added = await cdp.evaluate(`(() => {
+  const btn = document.querySelector(".ai-turn--answer .ai-turn__acts .lnkbtn:last-child");
+  const area = document.querySelector(".wr__edit");
+  const before = area.value.length;
+  area.focus();
+  area.setSelectionRange(area.value.length, area.value.length);
+  btn.click();
+  return { before, after: area.value.length, tail: area.value.slice(-120) };
+})()`);
+say(added.after > added.before, "anadir entra en el documento abierto", `${added.before} -> ${added.after}`);
+say(added.tail.indexOf("Que decide una persona al salir del ascensor") >= 0, "con la respuesta dentro", added.tail.slice(0, 40));
 
 /* --- se mueve y se queda donde se deja --------------------------------- */
 const moved = await cdp.evaluate(`(() => {

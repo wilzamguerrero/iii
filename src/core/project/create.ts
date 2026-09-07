@@ -5,15 +5,15 @@ import type { Seed } from "../ai/scaffold.ts";
 /**
  * Crear el proyecto: la carpeta y sus tres documentos.
  *
- * Cuatro escrituras en Notion, una detrás de otra y en este orden, porque los tres
- * documentos van dentro del desplegable y hasta que no exista no hay dónde
- * ponerlos. No se lanzan en paralelo a propósito: Notion admite unas tres
- * peticiones por segundo y cuatro a la vez es justo el borde donde empieza a
- * devolver 429 —lo reintenta `client.ts`, pero pedirlo despacio es mejor que
- * pedirlo mal.
+ * Cuatro escrituras en Notion, una detrás de otra y en este orden, porque los
+ * tres documentos van dentro de la página del proyecto y hasta que no exista
+ * no hay dónde ponerlos. No se lanzan en paralelo a propósito: Notion admite
+ * unas tres peticiones por segundo y cuatro a la vez es justo el borde donde
+ * empieza a devolver 429 —lo reintenta `client.ts`, pero pedirlo despacio es
+ * mejor que pedirlo mal—.
  *
  * Si falla a mitad no se deshace lo hecho. Es deliberado: lo escrito ya es de la
- * persona y está en su Notion, y borrar bloques suyos para dejar limpio un fallo
+ * persona y está en su Notion, y borrar páginas suyas para dejar limpio un fallo
  * nuestro es peor que dejarle un proyecto con dos documentos y decírselo.
  */
 

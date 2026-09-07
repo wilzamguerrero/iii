@@ -339,6 +339,21 @@ body.is-writing { overflow: hidden; }
 .doc__link { color: var(--ink); text-decoration-color: var(--ink-faint); }
 .doc__link:hover { text-decoration-color: var(--ink); }
 
+/* Una imagen en el documento: tan ancha como el texto y nunca más que la
+   hoja. El alt viaja con la imagen porque viene del documento y es texto;
+   una sin cargar muestra su marco con el alt, no un hueco mudo. */
+.doc__fig {
+  margin: 0 0 1.35rem;
+}
+
+.doc__img {
+  display: block;
+  max-width: 100%;
+  border: 1px solid var(--ink-line);
+  border-radius: var(--r-panel);
+  background: var(--wash);
+}
+
 .doc__none { color: var(--ink-soft); font-family: var(--sans); font-size: 0.9rem; }
 
 /* Cuando la revisión o los apartados llevan hasta un sitio, ese sitio se

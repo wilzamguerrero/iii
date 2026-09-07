@@ -1,125 +1,94 @@
 import { notionRequest } from "./client.ts";
-import type { RichText } from "./types.ts";
+import { pageTitle, type NotionPage } from "./types.ts";
+import {
+  appendChildren, blocksToMarkdown, createNotionPage, markedMarkdownToBlocks,
+  notionBodyOf, readBlocks, type DocBlock,
+} from "./blocks.ts";
+import { applyOperations, diffBlocks } from "./diff.ts";
 
 /**
- * El árbol del espacio de trabajo, sobre bloques de Notion.
+ * El árbol del espacio de trabajo, sobre páginas de Notion.
  *
- * Decisión D2 (plan.md §12), cerrada así:
+ * Decisión D2 (plan.md §12), revisada en la rama DEV:
  *
- *   proyecto = bloque `toggle`   ·   página = bloque `code` en Markdown
+ *   proyecto = página de Notion   ·   página = página hija   ·   contenido = bloques nativos
  *
- * Un `toggle` es el desplegable que pidió la instrucción: agrupa y se abre. Una
- * página es un bloque `code` con `language: "markdown"`, el nombre en el
- * `caption` y el documento en el `rich_text`.
+ * Antes: proyecto = `toggle`, página = bloque `code` con Markdown. Funcionaba
+ * como almacén sin pérdida, pero en Notion el documento se leía dentro de un
+ * recuadro de código y las imágenes no tenían dónde vivir. Ahora cada
+ * documento es una página de verdad con bloques nativos —prosa, títulos,
+ * listas, citas, imágenes— y se lee como cualquier página de Notion; el
+ * editor de la plataforma sigue siendo Markdown, y `blocks.ts` traduce en los
+ * dos sentidos con un diff (`diff.ts`) que no reescribe lo que no cambió.
  *
- * Por qué un bloque `code` y no bloques nativos de Notion: el documento va y
- * vuelve sin pérdida. Convertir Markdown a bloques nativos obliga a una
- * traducción en los dos sentidos que se come lo que Notion no tiene —tablas
- * complejas, notas al pie, matemáticas, las citas con su DOI— y cada guardado
- * degradaría un poco más el texto. El precio es que en Notion el contenido se lee
- * dentro de un recuadro de código en vez de como prosa; se acepta porque la
- * plataforma es quien lo edita y Notion es el almacén.
+ * Por qué no `child_page` bajo un `toggle`, como se pensó primero: la API de
+ * Notion no permite crear páginas dentro de un bloque; sólo dentro de otra
+ * página o de una base de datos. La referencia (`wzglexical-dev_mimem`) llegó
+ * al mismo sitio por su propio camino y dejó de usar `code block` como
+ * archivo.
  *
- * `child_page` no se lista: el árbol es la estructura de la plataforma, no un
- * navegador de todo el Notion de la persona. Lo que no creó la plataforma no
- * aparece aquí.
+ * Lo que no creó la plataforma no se lista: el árbol es la estructura de la
+ * plataforma, no un navegador de todo el Notion de la persona. Pero ahora el
+ * criterio es natural: se listan las páginas hijas de la raíz y de cada
+ * proyecto —si alguien creó a mano una página dentro de un proyecto de la
+ * plataforma, aparece; lo que no es página, no.
  */
 
 export type NodeKind = "project" | "page";
 
 export interface TreeNode {
-  /** Id del bloque en Notion. */
+  /** Id de la página en Notion. */
   id: string;
   name: string;
   kind: NodeKind;
-  /** Id del bloque o página que lo contiene. */
+  /** Id de la página que lo contiene. */
   parentId: string;
-  /** Sólo en páginas: el lenguaje del bloque `code`. */
-  language?: string;
-  /** Notion dice si el bloque tiene hijos; ahorra una petición para saberlo. */
+  /** La URL de la página en Notion, para abrirla allí. */
+  url?: string;
+  /** Notion dice si la página tiene hijos; ahorra una petición. */
   hasChildren?: boolean;
 }
 
-/** El trozo de un bloque de Notion que este árbol mira. */
-interface Block {
-  id: string;
-  type: string;
-  has_children?: boolean;
-  toggle?: { rich_text?: RichText[] };
-  code?: { rich_text?: RichText[]; caption?: RichText[]; language?: string };
-}
-
-interface ChildrenResponse {
-  results: Block[];
-  next_cursor: string | null;
-  has_more: boolean;
-}
-
-/** El nombre por defecto de una página nueva, y el respaldo cuando no hay caption. */
+/** El nombre por defecto de una página nueva. */
 export const UNTITLED_PAGE = "Sin título";
 export const UNTITLED_PROJECT = "Proyecto sin nombre";
-
-/** Notion parte el texto en fragmentos con formato; el contenido es la suma. */
-function joinText(spans: RichText[] | undefined): string {
-  if (!spans || spans.length === 0) return "";
-  return spans.map((span) => span.plain_text ?? "").join("");
-}
-
-/** Para nombres: lo mismo, sin espacios de sobra a los lados. */
-function plain(spans: RichText[] | undefined): string {
-  return joinText(spans).trim();
-}
 
 function text(content: string): { text: { content: string } } {
   return { text: { content } };
 }
 
-/**
- * Notion parte el texto en fragmentos de 2000 caracteres como máximo, así que un
- * documento largo no es un fragmento sino varios. Se corta por tamaño y no por
- * párrafos a propósito: `readPage` los vuelve a unir con `join("")` y el texto
- * que sale es exactamente el que entró, sin un salto de línea de más.
- *
- * Cien fragmentos son 180 000 caracteres, unas sesenta páginas. Pasado eso Notion
- * rechazaría el bloque entero, así que se dice aquí y no allí.
- */
-const SPAN_CHARS = 1800;
-const MAX_SPANS = 100;
+/* --- leer ------------------------------------------------------------------ */
 
-function spans(content: string): { text: { content: string } }[] {
-  if (!content) return [text("")];
-  const parts: { text: { content: string } }[] = [];
-  for (let at = 0; at < content.length; at += SPAN_CHARS) {
-    parts.push(text(content.slice(at, at + SPAN_CHARS)));
-  }
-  if (parts.length > MAX_SPANS) {
-    throw new Error(
-      `El documento pasa de ${(SPAN_CHARS * MAX_SPANS).toLocaleString("es")} caracteres, ` +
-      "que es lo que cabe en un bloque de Notion. Divídelo en dos documentos.",
-    );
-  }
-  return parts;
+/**
+ * Las páginas hijas de una página. Notion pagina de cien en cien.
+ *
+ * `/search` no sirve aquí: devuelve todo lo accesible, no los hijos de una
+ * página; los hijos se leen como bloques `child_page` de `/children` y cada
+ * uno trae su id, su título y si tiene contenido.
+ */
+interface ChildPageBlock {
+  id: string;
+  type: string;
+  has_children?: boolean;
+  child_page?: { title?: string };
+  [key: string]: unknown;
 }
 
-/**
- * Todos los hijos de un bloque o página. Notion pagina de cien en cien; un
- * proyecto con más de cien páginas es raro pero el bucle cuesta cinco líneas.
- */
 export async function fetchBlocks(
   token: string,
   parentId: string,
   signal?: AbortSignal,
-): Promise<Block[]> {
-  const blocks: Block[] = [];
+): Promise<ChildPageBlock[]> {
+  const blocks: ChildPageBlock[] = [];
   let cursor: string | null = null;
 
   do {
-    const query = cursor ? `?page_size=100&start_cursor=${encodeURIComponent(cursor)}` : "?page_size=100";
-    const page: ChildrenResponse = await notionRequest<ChildrenResponse>(
-      token,
-      `/blocks/${parentId}/children${query}`,
-      { signal },
-    );
+    const query: string = cursor
+      ? `?page_size=100&start_cursor=${encodeURIComponent(cursor)}`
+      : "?page_size=100";
+    const page: {
+      results: ChildPageBlock[]; next_cursor: string | null; has_more: boolean;
+    } = await notionRequest(token, `/blocks/${parentId}/children${query}`, { signal });
     blocks.push(...(page.results ?? []));
     cursor = page.has_more ? page.next_cursor : null;
   } while (cursor);
@@ -128,85 +97,88 @@ export async function fetchBlocks(
 }
 
 /**
- * Traduce bloques a nodos. Notion puede repetir un bloque en respuestas
- * consecutivas de la paginación, así que se deduplica por id.
+ * Traduce bloques `child_page` a nodos.
+ *
+ * En el modelo de páginas toda página puede tener dentro páginas (carpeta) o
+ * bloques (documento), y el bloque `child_page` no dice cuál de las dos es:
+ * `has_children` es true en cuanto tiene cualquier contenido. Así que aquí no
+ * se decide: todo lo que se lista es una página, y quien la abre —retícula o
+ * árbol— entra; si dentro hay páginas se navega entre ellas, y si no, es un
+ * documento y se abre el editor (`folders.ts` hace esa pregunta al entrar,
+ * que es la misma lectura que la retícula necesita de todos modos).
  */
-export function extractTree(blocks: readonly Block[], parentId: string): TreeNode[] {
-  const nodes: TreeNode[] = [];
-  const seen = new Set<string>();
-
-  for (const block of blocks) {
-    if (seen.has(block.id)) continue;
-
-    if (block.type === "toggle") {
-      seen.add(block.id);
-      nodes.push({
-        id: block.id,
-        name: plain(block.toggle?.rich_text) || UNTITLED_PROJECT,
-        kind: "project",
-        parentId,
-        hasChildren: block.has_children ?? false,
-      });
-      continue;
-    }
-
-    if (block.type === "code") {
-      seen.add(block.id);
-      const language = block.code?.language ?? "markdown";
-      nodes.push({
-        id: block.id,
-        name: plain(block.code?.caption) || UNTITLED_PAGE,
-        kind: "page",
-        parentId,
-        language,
-      });
-    }
-  }
-
-  return nodes;
-}
-
-/** Los hijos de un nodo, ya traducidos: proyectos primero, luego páginas. */
 export async function readChildren(
   token: string,
   parentId: string,
   signal?: AbortSignal,
 ): Promise<TreeNode[]> {
-  return extractTree(await fetchBlocks(token, parentId, signal), parentId);
+  const blocks = await fetchBlocks(token, parentId, signal);
+  return blocksToNodes(blocks, parentId);
 }
 
-async function append(token: string, parentId: string, child: unknown): Promise<Block> {
-  const created = await notionRequest<{ results: Block[] }>(
-    token,
-    `/blocks/${parentId}/children`,
-    { method: "PATCH", body: { children: [child] } },
-  );
-  const block = created.results?.[0];
-  if (!block) throw new Error("Notion no devolvió el bloque que acaba de crear.");
-  return block;
+/**
+ * Los hijos de un nodo, ya traducidos.
+ *
+ * Una página puede tener dentro tanto páginas como bloques sueltos —la
+ * persona escribe en Notion también—. Sólo las páginas entran al árbol; el
+ * texto suelto es contenido del documento cuando esa página es un documento.
+ */
+export function blocksToNodes(blocks: readonly ChildPageBlock[], parentId: string): TreeNode[] {
+  const out: TreeNode[] = [];
+  const seen = new Set<string>();
+
+  for (const block of blocks) {
+    if (block.type !== "child_page") continue;
+    if (seen.has(block.id)) continue;
+    seen.add(block.id);
+    out.push({
+      id: block.id,
+      name: block.child_page?.title?.trim() || UNTITLED_PAGE,
+      kind: "page",
+      parentId,
+      hasChildren: block.has_children ?? false,
+    });
+  }
+
+  return out;
 }
 
-/** Un proyecto nuevo: el desplegable vacío. */
+/* --- crear, renombrar, borrar ---------------------------------------------- */
+
+/**
+ * Una carpeta nueva: una página de Notion.
+ *
+ * Con icono de carpeta: dentro de Notion la distinción entre «carpeta» y
+ * «documento» no existe —todo es página—, así que el icono es lo que la
+ * plataforma usa para reconocer sus proyectos. El emoji 📁 es lo que Notion
+ * muestra nativamente; quien no lo quiera lo cambia en Notion y la plataforma
+ * lo respeta.
+ */
 export async function createProject(
   token: string,
   parentId: string,
   name: string,
 ): Promise<TreeNode> {
   const clean = name.trim() || UNTITLED_PROJECT;
-  const block = await append(token, parentId, {
-    object: "block",
-    type: "toggle",
-    toggle: { rich_text: [text(clean)] },
+  const made = await notionRequest<NotionPage>(token, "/pages", {
+    method: "POST",
+    body: {
+      parent: { page_id: parentId },
+      icon: { type: "emoji", emoji: "📁" },
+      properties: { title: { title: [text(clean)] } },
+    },
   });
-  return { id: block.id, name: clean, kind: "project", parentId, hasChildren: false };
+  return {
+    id: made.id, name: clean, kind: "project", parentId,
+    url: made.url, hasChildren: false,
+  };
 }
 
 /**
- * Una página nueva. El nombre va en el `caption` porque un bloque `code` no tiene
- * título, y el `caption` es lo que Notion muestra debajo del recuadro.
+ * Una página nueva, con su contenido inicial traducido a bloques nativos.
  *
- * Puede nacer con texto dentro: es lo que hace falta para que un proyecto se cree
- * con sus tres documentos ya enmarcados en un solo viaje por documento.
+ * Puede nacer con texto dentro: es lo que hace falta para que un proyecto se
+ * cree con sus tres documentos ya escritos en un solo viaje por documento.
  */
 export async function createPage(
   token: string,
@@ -215,65 +187,110 @@ export async function createPage(
   content = "",
 ): Promise<TreeNode> {
   const clean = name.trim() || UNTITLED_PAGE;
-  const block = await append(token, parentId, {
-    object: "block",
-    type: "code",
-    code: {
-      rich_text: spans(content),
-      language: "markdown",
-      caption: [text(clean)],
-    },
-  });
-  return { id: block.id, name: clean, kind: "page", parentId, language: "markdown" };
+  const made = await createNotionPage(token, parentId, clean);
+  if (content.trim()) {
+    const blocks = markedMarkdownToBlocks(content);
+    const children = blocks
+      .map((block) => notionBodyOf(block))
+      .filter((body): body is Record<string, unknown> => body !== null);
+    if (children.length > 0) await appendChildren(token, made.id, children);
+  }
+  return { id: made.id, name: clean, kind: "page", parentId, url: made.url, hasChildren: true };
 }
 
-/** Renombrar es cambiar el `rich_text` del toggle o el `caption` del code. */
+/** Renombrar es cambiar la propiedad de título de la página. */
 export async function renameNode(token: string, node: TreeNode, name: string): Promise<void> {
   const clean = name.trim();
   if (!clean) return;
-  const body = node.kind === "project"
-    ? { toggle: { rich_text: [text(clean)] } }
-    : { code: { caption: [text(clean)] } };
-  await notionRequest(token, `/blocks/${node.id}`, { method: "PATCH", body });
+  await notionRequest(token, `/pages/${node.id}`, {
+    method: "PATCH",
+    body: { properties: { title: { title: [text(clean)] } } },
+  });
 }
 
 /**
- * Borrar manda el bloque a la papelera de Notion, de donde se puede recuperar.
- * Con un proyecto se va también todo lo que tenga dentro.
+ * Borrar archiva la página: se recupera de la papelera de Notion. Con una
+ * carpeta se va también todo lo que tenga dentro.
  */
 export async function deleteNode(token: string, nodeId: string): Promise<void> {
-  await notionRequest(token, `/blocks/${nodeId}`, { method: "DELETE" });
+  await notionRequest(token, `/pages/${nodeId}`, { method: "DELETE" });
 }
 
-/** El texto de una página. Es lo que el asistente lee para poder cuestionarlo. */
+/* --- el contenido de un documento ------------------------------------------ */
+
+/** El estado confirmado de un documento, para el diff del guardado. */
+interface PageState {
+  blocks: DocBlock[];
+}
+
+const pageStates = new Map<string, PageState>();
+
+/**
+ * El texto de una página como Markdown para el editor.
+ *
+ * La primera vez que se abre un documento se leen sus bloques y se traducen a
+ * Markdown con las marcas de id (`<!--b:…-->`). Se guarda el estado leído: es
+ * la **base del diff** — guardar compara contra esto, no contra lo que diga
+ * el texto traducido, así que un bloque que aquí nadie tocó no se reescribe.
+ */
 export async function readPage(
   token: string,
   pageId: string,
   signal?: AbortSignal,
-): Promise<{ name: string; content: string; language: string }> {
-  const block = await notionRequest<Block>(token, `/blocks/${pageId}`, { signal });
-  return {
-    name: plain(block.code?.caption) || UNTITLED_PAGE,
-    content: joinText(block.code?.rich_text),
-    language: block.code?.language ?? "markdown",
-  };
+): Promise<{ name: string; content: string }> {
+  const [page, blocks] = await Promise.all([
+    notionRequest<NotionPage>(token, `/pages/${pageId}`, { signal }),
+    readBlocks(token, pageId, signal),
+  ]);
+  pageStates.set(pageId, { blocks });
+  return { name: pageTitle(page, UNTITLED_PAGE), content: blocksToMarkdown(blocks) };
 }
 
 /**
- * Guardar el texto de una página.
+ * Guardar el texto de una página: diff contra el estado confirmado y aplicar
+ * sólo la diferencia.
  *
- * Un `PATCH` sobre el bloque `code` reemplaza su `rich_text` entero, así que
- * guardar es mandar el documento completo. Es una petición por guardado y por eso
- * quien escribe espera a que la persona deje de teclear antes de llamar aquí:
- * Notion admite unas tres peticiones por segundo.
+ * El Markdown llega con las marcas de id. Los bloques nuevos no tienen id de
+ * Notion (`tmp-…`) y el aplicarlos devuelve sus ids reales, que se re-anclan
+ * en el estado confirmado para que el guardado siguiente no los vuelva a
+ * crear. Si algo falla a medias, lo que llegó ya está en Notion y la base
+ * sólo cambia por lo que de verdad se confirmó.
  */
 export async function writePage(
   token: string,
   pageId: string,
   content: string,
 ): Promise<void> {
-  await notionRequest(token, `/blocks/${pageId}`, {
-    method: "PATCH",
-    body: { code: { rich_text: spans(content) } },
+  const state = pageStates.get(pageId) ?? { blocks: [] };
+  const draft = markedMarkdownToBlocks(content);
+
+  const diff = diffBlocks(state.blocks, draft);
+  if (diff.changes === 0) return;
+
+  const result = await applyOperations(token, pageId, diff);
+
+  // La nueva base: lo que quedó del borrador, con los ids reales de lo creado.
+  const oldById = new Map(state.blocks.map((block) => [block.id, block] as const));
+  const next: DocBlock[] = draft.map((block) => {
+    const real = result.idMap.get(block.id);
+    if (real) return { ...block, id: real };
+    return block;
   });
+
+  if (result.errors.length > 0) {
+    // Se guarda la base con lo que sí llegó: el borrador local sigue siendo
+    // la red de seguridad y lo que falte se reintenta al guardarse otra vez.
+    const confirmed = next.filter((block) => oldById.has(block.id) || result.idMap.has(block.id));
+    pageStates.set(pageId, {
+      blocks: confirmed.map((block) => ({ ...block })),
+    });
+    throw new Error(`No se pudo guardar todo: ${result.errors.length} bloque(s) no llegaron.`);
+  }
+
+  pageStates.set(pageId, { blocks: next.map((block) => ({ ...block })) });
+}
+
+/** Olvidar el estado confirmado: la página se cerró. */
+export function forgetPage(pageId: string): void {
+  pageStates.delete(pageId);
 }

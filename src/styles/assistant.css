@@ -237,6 +237,39 @@
   50%      { opacity: 1; }
 }
 
+/* --- la respuesta compuesta ------------------------------------------------ */
+
+/* La respuesta ya no es texto plano: se compone como el modo lectura —mismo
+   traductor, una sola gramática—. Sin burbuja, igual que antes: los bloques
+   de la respuesta se leen como documento, en un cuerpo a lo ancho entero. */
+.ai-turn--answer { white-space: normal; }
+
+.ai-md {
+  font-size: 0.82rem;
+  font-weight: 300;
+  line-height: 1.62;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.ai-md .doc__h { font-size: 0.92rem; margin: 0.9rem 0 0.4rem; }
+.ai-md .doc__h:first-child { margin-top: 0; }
+.ai-md .doc__p { margin: 0 0 0.55rem; }
+.ai-md .doc__list { margin: 0 0 0.55rem; }
+.ai-md .doc__quote { margin: 0 0 0.55rem; }
+.ai-md .doc__pre { margin: 0 0 0.55rem; font-size: 0.78rem; }
+.ai-md .doc__fig { margin: 0 0 0.55rem; }
+
+/* Las acciones de la respuesta, al pie y discretas: ahí están, no se ponen
+   delante de lo que dicen. */
+.ai-turn__acts {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+}
+
+.ai-turn__acts .lnkbtn { font-size: 0.75rem; }
+
 /* --- nada dicho todavía -------------------------------------------------- */
 
 .ai-empty { display: flex; flex-direction: column; gap: 0.8rem; }

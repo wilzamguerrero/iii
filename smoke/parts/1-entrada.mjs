@@ -52,8 +52,10 @@ say(typed.state === "Sin guardar", "escribir lo marca sin guardar", typed.state)
 say(typed.heads === 5, "y el apartado nuevo aparece a la izquierda", "n=" + typed.heads);
 
 await wait(2200);
-const saved = await cdp.evaluate("({ state: document.querySelector(\".wr__state\").textContent, saves: window.__saved.length, last: (window.__saved[window.__saved.length - 1] || \"\").slice(-40) })");
-say(saved.saves === 1, "se guarda solo, una vez", "n=" + saved.saves);
+const saved = await cdp.evaluate(`({ state: document.querySelector(".wr__state").textContent, saves: window.__saves, last: (window.__saved[window.__saved.length - 1] || "").slice(-40) })`);
+// Con bloques, una salva son uno o dos lotes —según cuántas anclas nuevas
+// haga el diff—, pero nunca una por tecla: eso es lo que se comprueba.
+say(saved.saves >= 1 && saved.saves <= 2, "se guarda solo, en una salva", "lotes=" + saved.saves);
 say(saved.state === "Guardado en Notion", "y lo dice", saved.state);
 say(saved.last.includes("guardado se entera."), "con lo escrito dentro", saved.last);
 

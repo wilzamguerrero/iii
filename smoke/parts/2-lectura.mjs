@@ -111,4 +111,67 @@ say(asked.open === true, "la pregunta va a la ventana del asistente");
 say(asked.mine !== null && asked.mine.indexOf("El programa de Diseno") > 0, "con el fragmento dentro", asked.mine ? asked.mine.slice(0, 60) : "nada");
 say(asked.toolsHidden === true, "y la barra de seleccion se retira");
 
+/* --- el clic derecho abre el menu de la IA ------------------------------ */
+await cdp.evaluate(`document.querySelector(".ai-pop__x").click()`);
+await wait(250);
+const menu = await cdp.evaluate(`(() => {
+  const area = document.querySelector(".wr__edit");
+  const at = area.value.indexOf("Una lista");
+  area.focus();
+  area.setSelectionRange(at, at + 20);
+  const rect = area.getBoundingClientRect();
+  const event = new MouseEvent("contextmenu", {
+    bubbles: true, cancelable: true, clientX: rect.left + 60, clientY: rect.top + 60,
+  });
+  area.dispatchEvent(event);
+  const pop = document.querySelector(".menu-pop");
+  return {
+    opened: event.defaultPrevented,
+    shown: pop ? !pop.hidden && pop.isConnected : false,
+    items: pop ? [...pop.querySelectorAll(".menu-pop__item")].map((b) => b.textContent) : [],
+  };
+})()`);
+say(menu.opened === true && menu.shown === true, "el clic derecho sobre lo marcado abre el menu de la IA");
+say(menu.items.includes("Cuestionar") && menu.items.includes("Resumir")
+  && menu.items.includes("Buscar respaldo") && menu.items.includes("Parafrasear"),
+  "con las acciones del metodo y las de investigacion", JSON.stringify(menu.items));
+
+await cdp.evaluate(`(() => {
+  const item = [...document.querySelectorAll(".menu-pop__item")].find((b) => b.textContent === "Buscar respaldo");
+  if (item) item.click();
+})()`);
+await wait(400);
+const respaldo = await cdp.evaluate(`(() => {
+  const turns = [...document.querySelectorAll(".ai-turn")].map((t) => t.textContent);
+  return {
+    asked: turns.find((t) => t.indexOf("necesita respaldo") > 0) || null,
+    menuGone: !document.querySelector(".menu-pop"),
+  };
+})()`);
+say(respaldo.asked !== null, "buscar respaldo pregunta por el fragmento en el asistente",
+  respaldo.asked ? respaldo.asked.slice(0, 60) : "nada");
+say(respaldo.menuGone === true, "y el menu se retira al usarlo");
+
+/* --- una imagen en el modo lectura -------------------------------------- */
+await cdp.evaluate(`(() => {
+  const area = document.querySelector(".wr__edit");
+  area.value = area.value + String.fromCharCode(10, 10) + "![Un plano](https://example.com/plano.png)";
+  area.dispatchEvent(new Event("input", { bubbles: true }));
+})()`);
+await cdp.evaluate(`document.querySelector(".wr__act--mode").click()`);
+await wait(200);
+const fig = await cdp.evaluate(`(() => {
+  const img = document.querySelector(".doc__img");
+  const bad = document.querySelector(".doc__fig[src^='javascript']");
+  return {
+    there: !!img,
+    src: img ? img.getAttribute("src") : null,
+    alt: img ? img.getAttribute("alt") : null,
+    clean: !bad,
+  };
+})()`);
+say(fig.there === true && fig.src === "https://example.com/plano.png",
+  "una imagen del documento se ve en la lectura", JSON.stringify(fig));
+say(fig.alt === "Un plano", "con su texto alternativo", fig.alt);
+
 cdp.close();

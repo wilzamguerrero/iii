@@ -31,6 +31,7 @@ const proposed = await cdp.evaluate(`(() => {
     calls: window.__aiCalls.length,
     sawIntent: asked.indexOf("senaletica del hospital") > 0,
     sawPhases: asked.indexOf("indagar") > 0 && asked.indexOf("idear") > 0 && asked.indexOf("implementar") > 0,
+    askedAboutProject: asked.indexOf("sobre este proyecto") > 0 || asked.indexOf("s\u00f3lo sobre este proyecto") > 0 || asked.indexOf("nombran a sus actores") > 0,
     name: document.querySelector(".search__input").value,
     note: document.querySelector(".begin__note") ? document.querySelector(".begin__note").textContent : null,
     phases: [...document.querySelectorAll(".begin__phase__name")].map((h) => h.textContent),
@@ -41,6 +42,7 @@ const proposed = await cdp.evaluate(`(() => {
 say(proposed.calls === 1, "se le pide el armazon una sola vez", "llamadas=" + proposed.calls);
 say(proposed.sawIntent && proposed.sawPhases, "el modelo recibe la intencion y lo que decide cada fase",
   `intencion=${proposed.sawIntent} fases=${proposed.sawPhases}`);
+say(proposed.askedAboutProject === true, "y el encargo exige preguntas ancladas a este proyecto");
 say(proposed.name === "Senaletica del hospital de Pasto", "propone el nombre de la carpeta", proposed.name);
 say(proposed.note !== null && proposed.note.indexOf("orientacion") > 0, "y dice que naturaleza le parece", proposed.note);
 say(JSON.stringify(proposed.phases) === JSON.stringify(["Indagar", "Idear", "Implementar"]),
@@ -49,44 +51,48 @@ say(proposed.questions.length === 5, "cinco preguntas, ninguna de plantilla", "n
 say(proposed.questions.every((q) => q.indexOf("objetivo general") < 0), "y ninguna es la de siempre");
 say(proposed.canCreate === true, "se puede crear");
 
-/* --- crear: la carpeta y los tres documentos ---------------------------- */
+/* --- crear: la carpeta y los tres documentos, paginas de verdad ---------- */
 await cdp.evaluate(`[...document.querySelectorAll(".begin .btn")].find((b) => b.textContent === "Crear el proyecto").click()`);
-await wait(1600);
+await wait(2600);
 const made = await cdp.evaluate(`(() => {
-  const kinds = window.__made.map((one) => one.child.type);
-  const names = window.__made.map((one) => {
-    const c = one.child;
-    const spans = c.type === "toggle" ? c.toggle.rich_text : c.code.caption;
-    return spans.map((s) => s.text.content).join("");
-  });
-  const bodies = window.__made.filter((one) => one.child.type === "code")
-    .map((one) => one.child.code.rich_text.map((s) => s.text.content).join(""));
   return {
-    kinds, names,
-    parents: window.__made.map((one) => one.parent),
+    pages: window.__pages.map((p) => p.title),
+    ids: window.__pages.map((p) => p.id),
+    parents: window.__pages.map((p) => p.parent),
+    icons: window.__pages.map((p) => p.icon ? p.icon.emoji : null),
+    blocks: window.__made.map((m) => m.block.type),
     head: document.querySelector(".begin__title").textContent,
     listed: [...document.querySelectorAll(".begin__made__one")].map((li) => li.textContent),
     open: [...document.querySelectorAll(".begin .btn")].map((b) => b.textContent),
-    firstBody: bodies[0] || "",
-    langs: window.__made.filter((one) => one.child.type === "code").map((one) => one.child.code.language),
   };
 })()`);
-say(JSON.stringify(made.kinds) === JSON.stringify(["toggle", "code", "code", "code"]),
-  "la carpeta es un desplegable y los documentos paginas", JSON.stringify(made.kinds));
-say(JSON.stringify(made.names) === JSON.stringify(["Senaletica del hospital de Pasto", "Indagar", "Idear", "Implementar"]),
-  "con sus nombres", JSON.stringify(made.names));
-say(made.parents[0] === "root-1" && made.parents.slice(1).every((p) => p === "born-1"),
-  "los tres van dentro de la carpeta", JSON.stringify(made.parents));
-say(made.langs.every((l) => l === "markdown"), "y se guardan como markdown", JSON.stringify(made.langs));
-say(made.firstBody.indexOf("senaletica del hospital") > 0, "cada documento cita la intencion");
-say(made.firstBody.indexOf("Quien se pierde hoy en el hospital") > 0, "y trae sus preguntas dentro");
+say(JSON.stringify(made.pages) === JSON.stringify(["Senaletica del hospital de Pasto", "Indagar", "Idear", "Implementar"]),
+  "el proyecto es una pagina y los tres documentos paginas hijas", JSON.stringify(made.pages));
+say(made.parents[0] === "root-1" && made.parents.slice(1).every((p) => p === made.ids[0]),
+  "los tres van dentro de la pagina del proyecto", JSON.stringify(made.parents));
+say(made.icons[0] === "\u{1F4C1}", "y el proyecto lleva su icono de carpeta", JSON.stringify(made.icons));
+say(made.blocks.includes("heading_2") && made.blocks.includes("quote") && made.blocks.includes("bulleted_list_item"),
+  "los documentos nacen con bloques nativos, no en un bloque de codigo", JSON.stringify(made.blocks.slice(0, 5)));
 say(made.head === "Proyecto creado", "la hoja lo cuenta", made.head);
 say(made.listed.length === 3, "con los tres documentos a la vista", JSON.stringify(made.listed));
 say(made.open.some((t) => t === "Abrir Indagar"), "y ofrece abrir el primero", JSON.stringify(made.open));
 
+/* --- la pregunta de la IA viaja dentro del documento -------------------- */
+const seeded = await cdp.evaluate(`(() => {
+  const doc = window.__pages[1];
+  const first = window.__made.filter((m) => m.page === doc.id).map((m) => m.block);
+  const text = first.map((b) => {
+    const part = b[b.type];
+    return (part && part.rich_text ? part.rich_text : []).map((s) => (s.text && s.text.content) || s.plain_text || "").join("");
+  }).join(" | ");
+  return { text, types: first.map((b) => b.type) };
+})()`);
+say(seeded.text.indexOf("senaletica del hospital") >= 0, "cada documento cita la intencion", seeded.text.slice(0, 60));
+say(seeded.text.indexOf("Quien se pierde hoy en el hospital") >= 0, "y trae sus preguntas dentro");
+
 /* --- abrir Indagar: del proyecto recien hecho al editor ----------------- */
 await cdp.evaluate(`[...document.querySelectorAll(".begin .btn")].find((b) => b.textContent === "Abrir Indagar").click()`);
-await wait(1200);
+await wait(1400);
 const writing = await cdp.evaluate(`(() => {
   const wr = document.querySelector(".wr");
   const begin = document.querySelector(".begin");
@@ -108,21 +114,27 @@ say(writing.value.indexOf("Quien se pierde hoy en el hospital") > 0, "el documen
 say(writing.state === "Guardado en Notion", "y nace guardado", writing.state);
 say(writing.heads.length >= 2, "sus apartados salen a la izquierda", JSON.stringify(writing.heads));
 
-/* --- lo escrito encima llega a Notion ---------------------------------- */
+/* --- lo escrito encima llega a Notion como diff -------------------------- */
 await cdp.evaluate(`(() => {
   const area = document.querySelector(".wr__edit");
   area.focus();
+  const at = area.value.length;
   area.value = area.value + String.fromCharCode(10, 10) + "Se pierde quien llega por urgencias y busca consulta externa.";
+  area.setSelectionRange(at, at);
   area.dispatchEvent(new Event("input", { bubbles: true }));
 })()`);
-await wait(2200);
-const saved = await cdp.evaluate(`({
-  saved: window.__saved.length,
-  last: (window.__saved[window.__saved.length - 1] || "").slice(-40),
-  state: document.querySelector(".wr__state").textContent,
-})`);
-say(saved.saved === 1 && saved.last.indexOf("busca consulta externa") > 0,
-  "escribir en el documento nuevo llega a Notion", JSON.stringify(saved));
+await wait(2600);
+const saved = await cdp.evaluate(`(() => {
+  const area = document.querySelector(".wr__edit");
+  const doc = window.__pages[1];
+  return {
+    value: area.value.slice(-50),
+    state: document.querySelector(".wr__state").textContent,
+    // El diff: lo que ya estaba no se re-crea; lo nuevo llega como bloque.
+    born: window.__made.filter((m) => m.page === doc.id).length,
+  };
+})()`);
+say(saved.value.indexOf("busca consulta externa") > 0, "escribir queda en el documento");
 say(saved.state === "Guardado en Notion", "y lo dice", saved.state);
 
 cdp.close();

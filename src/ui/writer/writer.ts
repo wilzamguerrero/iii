@@ -2,10 +2,13 @@ import { el, render } from "../dom.ts";
 import { icon } from "../icons.ts";
 import { mountMic, type Mic } from "../voice/mic.ts";
 import { askAssistant } from "../assistant/assistant.ts";
+import { setAddTarget } from "../assistant/answer.ts";
+import { openMenu } from "../dock/menu.ts";
+import { menuItems } from "./contextai.ts";
 import { setLiveDocument } from "../../core/ai/conversation.ts";
 import { clearSelection, selection, type SelectedPage } from "../../core/state/selection.ts";
 import { session } from "../../core/persist/session.ts";
-import { readPage } from "../../core/notion/tree.ts";
+import { readPage, forgetPage } from "../../core/notion/tree.ts";
 import { dropDraft, readDraft } from "../../core/persist/drafts.ts";
 import { phaseByName, structureInText } from "../../core/method/structures.ts";
 import { renderMarkdown } from "./markdown.ts";
@@ -283,6 +286,11 @@ function watchSelection(): void {
  * en la fase; precisar señala dónde se puede leer de dos maneras. Las tres contestan
  * en la ventana del asistente, que ya está abierta y se puede mover para no tapar el
  * texto del que se habla.
+ *
+ * El menú del clic derecho (`contextai.ts`) tiene la versión completa, con las
+ * acciones de investigación además de éstas; la barra muestra las tres
+ * primeras, que son las del método, porque son las que se piden sobre la
+ * marcha mientras se escribe.
  */
 const ACTS: readonly { id: string; label: string; title: string; order: string }[] = [
   {
@@ -429,6 +437,16 @@ function build(): void {
       select: watchSelection,
       keyup: watchSelection,
       pointerup: watchSelection,
+      // El clic derecho con algo marcado abre el menú de la IA: las mismas
+      // tres acciones de la barra más las de investigación.
+      contextmenu: (event) => {
+        const fragment = selected();
+        if (!fragment || fragment.length < MIN_SELECTION) return;
+        event.preventDefault();
+        openMenu({ x: event.clientX, y: event.clientY, below: 2 }, menuItems(
+          fragment, page?.name ?? "el documento",
+        ));
+      },
       blur: () => {
         // Al pulsar una de las tres acciones se pierde el foco del campo: si la
         // barra se escondiera ahí, no se llegaría nunca a pulsarla.
@@ -481,6 +499,18 @@ function build(): void {
   document.body.append(root);
   document.addEventListener("selectionchange", () => {
     if (mode === "read" && root && !root.hidden) watchSelection();
+  });
+  // El clic derecho en la vista de lectura: mismo menú que en el editor, con
+  // el fragmento que haya marcado en la página compuesta.
+  document.addEventListener("contextmenu", (event) => {
+    if (mode !== "read" || !root || root.hidden) return;
+    if (!(event.target instanceof Node) || !readView?.contains(event.target)) return;
+    const fragment = selected();
+    if (!fragment || fragment.length < MIN_SELECTION) return;
+    event.preventDefault();
+    openMenu({ x: event.clientX, y: event.clientY, below: 2 }, menuItems(
+      fragment, page?.name ?? "el documento",
+    ));
   });
 }
 
@@ -633,6 +663,10 @@ function shut(): void {
   panel?.close();
   hideTools();
   saver.end();
+  // El estado de bloques confirmados de esta página ya no hace falta: si se
+  // vuelve a abrir, se lee otra vez. Sin esto, una sesión larga escribiría
+  // documentos enteros en memoria para siempre.
+  if (page) forgetPage(page.id);
   root.hidden = true;
   document.body.classList.remove("is-writing");
   // La página abierta se olvida para que el asistente deje de decir que la ve.
@@ -652,6 +686,28 @@ function shut(): void {
 export function mountWriter(): void {
   if (root) return;
   build();
+
+  // El asistente añade texto al documento: lo pega al final del cursor, en
+  // el modo que toque, y quien escribe decide qué queda. Es la misma costura
+  // de siempre —una función que se deja puesta, no un import cruzado—.
+  setAddTarget((text) => {
+    const clean = text.trim();
+    if (!clean || !area || root?.hidden) return;
+    if (mode === "read") setMode("write");
+    const now = area.value;
+    const at = area.selectionStart ?? now.length;
+    const before = now.slice(0, at);
+    const after = now.slice(at);
+    // Con espacio propio: lo que llega es una idea que entra al documento,
+    // no una frase que se pega en mitad de una palabra.
+    const lead = before && !before.endsWith("\n") ? "\n\n" : "";
+    const body = lead + clean + (after && !after.startsWith("\n") ? "\n\n" : "");
+    area.value = before + body + after;
+    const caret = (before + body).length;
+    area.focus();
+    area.setSelectionRange(caret, caret);
+    changed();
+  });
 
   // El asistente pregunta por lo que hay en la hoja, no por lo que llegó a Notion.
   setLiveDocument((pageId) => (page && page.id === pageId && root && !root.hidden ? text() : null));

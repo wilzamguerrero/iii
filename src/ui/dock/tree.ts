@@ -2,7 +2,7 @@ import { el, render } from "../dom.ts";
 import { icon, setIcon } from "../icons.ts";
 import { NotionRequestError } from "../../core/notion/client.ts";
 import {
-  readChildren, UNTITLED_PAGE, UNTITLED_PROJECT, type TreeNode,
+  readChildren, UNTITLED_PAGE, type TreeNode,
 } from "../../core/notion/tree.ts";
 import { selection } from "../../core/state/selection.ts";
 import type { Crumb } from "./folders.ts";
@@ -142,29 +142,20 @@ export function mountTree(options: TreeOptions): Tree {
 
   function nameOf(branch: Branch): string {
     if (!branch.node) return options.rootTitle || "Proyectos";
-    return branch.node.name
-      || (branch.node.kind === "project" ? UNTITLED_PROJECT : UNTITLED_PAGE);
-  }
-
-  function leaf(branch: Branch): boolean {
-    return branch.node?.kind === "page";
+    return branch.node.name || UNTITLED_PAGE;
   }
 
   function paintRow(branch: Branch): void {
     const name = nameOf(branch);
     const parts: Node[] = [];
 
-    if (leaf(branch)) {
-      // Un documento no se abre ni se cierra: donde iría el triángulo va aire,
-      // para que los nombres de un mismo nivel empiecen todos en la misma línea.
-      parts.push(el("span", { class: "tree__twist tree__twist--none", attrs: { "aria-hidden": "true" } }));
-    } else {
-      parts.push(el("span", {
-        class: "tree__twist",
-        attrs: { "aria-hidden": "true", title: branch.open ? "Cerrar" : "Abrir" },
-      }, [icon(branch.open ? "down" : "right", "ico ico--twist")]));
-      branch.item.setAttribute("aria-expanded", String(branch.open));
-    }
+    // Toda página puede tener dentro páginas o contenido: el triángulo va en
+    // todas. Al abrir una que sólo tiene texto, la rama lo dice y no engaña.
+    parts.push(el("span", {
+      class: "tree__twist",
+      attrs: { "aria-hidden": "true", title: branch.open ? "Cerrar" : "Abrir" },
+    }, [icon(branch.open ? "down" : "right", "ico ico--twist")]));
+    branch.item.setAttribute("aria-expanded", String(branch.open));
 
     setIcon(branch.glyph, glyphOf(branch));
     parts.push(branch.glyph, el("span", { class: "tree__name", text: name }));
@@ -174,14 +165,13 @@ export function mountTree(options: TreeOptions): Tree {
 
   /** La figura dice el estado: la carpeta abierta y el documento que se está leyendo. */
   function glyphOf(branch: Branch): "folder" | "folderOpen" | "page" | "pageFull" {
-    if (leaf(branch)) return selection.get()?.id === branch.id ? "pageFull" : "page";
-    return branch.open ? "folderOpen" : "folder";
+    if (branch.open) return "folderOpen";
+    return selection.get()?.id === branch.id ? "pageFull" : "page";
   }
 
   /* --- abrir, cerrar, leer ------------------------------------------------ */
 
   async function toggle(branch: Branch): Promise<void> {
-    if (leaf(branch)) return;
     if (branch.open) { shut(branch); return; }
     await show(branch);
   }
@@ -287,16 +277,15 @@ export function mountTree(options: TreeOptions): Tree {
     return trail;
   }
 
-  /** Una carpeta se entra; un documento se abre y su carpeta se muestra. */
+  /**
+   * Un renglón se abre como una baldosa: la página puede ser carpeta o
+   * documento y el árbol no lo sabe sin leerla —decidirlo lo hace
+   * `folders.ts`, que ya lee lo que hay dentro al entrar.
+   */
   function activate(branch: Branch): void {
-    if (!leaf(branch)) {
-      void show(branch);
-      options.goTo(pathOf(branch));
-      return;
-    }
+    void show(branch);
     const node = branch.node;
-    if (!node || !branch.parent) return;
-    options.open(node, pathOf(branch.parent));
+    if (node) options.open(node, branch.parent ? pathOf(branch.parent) : pathOf(branch));
   }
 
   /* --- lo que está señalado ----------------------------------------------- */
@@ -314,10 +303,9 @@ export function mountTree(options: TreeOptions): Tree {
   function markSelected(): void {
     const chosen = selection.get()?.id ?? "";
     walk(rootBranch, (branch) => {
-      if (!leaf(branch)) return;
       const mine = branch.id === chosen;
       branch.item.setAttribute("aria-selected", String(mine));
-      setIcon(branch.glyph, mine ? "pageFull" : "page");
+      setIcon(branch.glyph, glyphOf(branch));
     });
   }
 
@@ -377,12 +365,11 @@ export function mountTree(options: TreeOptions): Tree {
       case "ArrowRight":
         // Cerrada, se abre; abierta, se entra en el primer hijo. Es la única
         // manera de recorrer un árbol sin levantar la mano del teclado.
-        if (leaf(branch)) return;
         if (!branch.open) { void show(branch); break; }
         { const first = branch.children.values().next().value; if (first) focus(first, true); }
         break;
       case "ArrowLeft":
-        if (!leaf(branch) && branch.open) { shut(branch); break; }
+        if (branch.open) { shut(branch); break; }
         if (branch.parent) focus(branch.parent, true);
         break;
       case "Enter": case " ":

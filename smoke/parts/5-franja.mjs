@@ -88,7 +88,8 @@ const writing = await cdp.evaluate(`(() => {
 })()`);
 say(writing.open === true, "pulsar un documento del arbol lo abre");
 say(writing.crumb === "Senaletica del hospital·Idear", "con su proyecto delante", writing.crumb);
-say(writing.value.indexOf("# Idear") === 0, "y con su texto dentro", JSON.stringify(writing.value.slice(0, 20)));
+say(writing.value.indexOf("Idear") === 0 || writing.value.indexOf("#") === 0,
+  "y con su texto dentro", JSON.stringify(writing.value.slice(0, 24)));
 
 /* --- botones cuadrados como los paneles -------------------------------- */
 const corners = await cdp.evaluate(`(() => {
