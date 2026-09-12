@@ -321,6 +321,22 @@ body.is-writing { overflow: hidden; }
   border-top: 1px solid var(--ink-line);
 }
 
+/* Lo que escribió la IA, mientras nadie lo haya tocado.
+
+   Color y nada más —ni fondo, ni subrayado, ni cursiva—: es texto del
+   documento, no un aviso. Se distingue al mirar la página entera y no
+   interrumpe al leer una frase. El color se retira solo en cuanto se cambia
+   una palabra (`ui/writer/authored.ts`), así que lo que queda azul es lo que
+   de verdad sigue siendo del modelo.
+
+   Y no es la única seña: el mismo color viaja a Notion como color de texto
+   nativo, de modo que el documento dice lo mismo abierto allí. */
+.vis__ai { color: var(--ai); }
+
+/* Al marcar texto manda la selección, no la autoría: si no, media frase
+   seleccionada se leería de dos colores. */
+.vis__ai::selection { color: inherit; }
+
 /* Un bloque vacío conserva su alto: si colapsara, el cursor tendría cero
    píxeles dónde estar y escribir sería a ciegas. */
 .vis > p:empty::after,

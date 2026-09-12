@@ -27,6 +27,10 @@
   --veil: rgba(20, 23, 28, 0.22);
   /* Lo que falló. No es el único indicio: el texto también lo dice. */
   --bad: #a3341f;
+  /* Lo que escribió la IA y nadie ha tocado. Es el azul de Notion —el color
+     viaja allí como color de texto nativo—, así que aquí se declara el mismo
+     para que el documento se lea igual en los dos sitios. */
+  --ai: #337ea9;
 
   /* Un panel suelto sobre la página: la franja, la ventana del asistente y las
      ventanitas de la bandeja son el mismo objeto y se declaran una vez. */
@@ -70,6 +74,7 @@
   /* Como las sombras: sobre fondo oscuro, un velo de tinta clara aclararía. */
   --veil: rgba(0, 0, 0, 0.55);
   --bad: #e79379;
+  --ai: #529cca;
 
   --shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
   --shadow-lift: 0 3px 12px rgba(0, 0, 0, 0.5);

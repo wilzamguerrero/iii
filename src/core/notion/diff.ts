@@ -1,5 +1,5 @@
 import { notionRequest } from "./client.ts";
-import { notionBodyOf, type DocBlock } from "./blocks.ts";
+import { notionBodyOf, runsOf, type DocBlock } from "./blocks.ts";
 
 /**
  * El diff de bloques: qué cambió entre el documento confirmado y el borrador.
@@ -88,7 +88,26 @@ function sameBlock(one: DocBlock, two: DocBlock): boolean {
   // un cambio de bloque. Lo que sí cambia —la dirección externa, o de imagen a
   // adjunto— sí es un cambio.
   if (stableUrl(one) !== stableUrl(two)) return false;
-  return one.text === two.text;
+  if (one.text !== two.text) return false;
+  // Y el color: quién escribió cada trozo viaja a Notion como color de texto,
+  // así que cambiarlo es un cambio del bloque. Sin esto, tocar una palabra que
+  // la IA había escrito —el texto queda igual, el trozo pasa a ser de la
+  // persona— no viajaría nunca, y el color se quedaría puesto en Notion
+  // diciendo algo que ya no es verdad.
+  return sameRuns(one, two);
+}
+
+/** ¿Dicen lo mismo sobre quién escribió cada trozo? */
+function sameRuns(one: DocBlock, two: DocBlock): boolean {
+  const a = runsOf(one);
+  const b = runsOf(two);
+  if (a.length !== b.length) return false;
+  return a.every((run, at) => {
+    const other = b[at];
+    return other !== undefined
+      && run.text === other.text
+      && (run.ai === true) === (other.ai === true);
+  });
 }
 
 /** La URL de un bloque de imagen, sin las firmadas por Notion. */
@@ -155,7 +174,12 @@ export function diffBlocks(baseline: readonly DocBlock[], draft: readonly DocBlo
     if (!inOrder) {
       // Nuevo, o movido: se crea en este sitio.
       operations.push({ kind: "create", block, after });
-      after = null;   // el lote de creates que sigue cuelga de este
+      // El siguiente cuelga de este, y se le nombra por su id —temporal si
+      // acaba de nacer—. Antes aqui iba `null`, que no significa «detras del
+      // anterior» sino «sin ancla», y Notion lo traduce a «al final de la
+      // pagina»: escribir tres parrafos seguidos en medio del documento dejaba
+      // el primero en su sitio y mandaba los otros dos al final.
+      after = block.id;
       // Si era un bloque movido, el original se borra más abajo.
     } else {
       if (known && !sameBlock(known, block)) {
@@ -253,18 +277,30 @@ export async function applyOperations(
     }
   }
 
-  /* --- creates: en lotes por ancla --- */
+  /* --- creates: en lotes por ancla ---
+
+     Un bloque nuevo puede colgar de otro bloque nuevo, y ese todavia no existe
+     en Notion: su id es temporal y no sirve como `after`. Pero si cuelga de
+     uno que va en este mismo lote, no hace falta nombrarlo —Notion respeta el
+     orden de llegada dentro de un `PATCH /children`—, asi que el lote entero
+     viaja con el `after` real del primero. Por eso la cadena se sigue hacia
+     atras hasta dar con un id que Notion conozca. */
+  const madeHere = new Set(creates.map((op) => op.block.id));
   let index = 0;
   while (index < creates.length) {
     if (signal?.aborted) break;
+    // El ancla del lote: el primer antecesor que exista de verdad en Notion.
     const after = creates[index]?.after ?? null;
+    const anchor = madeHere.has(after ?? "") ? null : after;
     const batch: typeof creates = [];
-    while (
-      index < creates.length
-      && batch.length < 100
-      && (creates[index]?.after ?? null) === after
-    ) {
-      batch.push(creates[index]!);
+    while (index < creates.length && batch.length < 100) {
+      const one = creates[index]!;
+      const mine = one.after ?? null;
+      // Entra en el lote si cuelga del mismo sitio de fuera, o de un bloque
+      // que ya va dentro de este lote.
+      const follows = batch.some((prev) => prev.block.id === mine);
+      if (!follows && (madeHere.has(mine ?? "") || mine !== anchor)) break;
+      batch.push(one);
       index += 1;
     }
     if (batch.length === 0) { index += 1; continue; }
@@ -282,7 +318,7 @@ export async function applyOperations(
         `/blocks/${pageId}/children`,
         {
           method: "PATCH",
-          body: { children, ...(after ? { after } : {}) },
+          body: { children, ...(anchor ? { after: anchor } : {}) },
           ...(signal !== undefined ? { signal } : {}),
         },
       );

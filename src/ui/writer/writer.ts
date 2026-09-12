@@ -4,7 +4,7 @@ import { askAssistant } from "../assistant/assistant.ts";
 import { setAddTarget } from "../assistant/answer.ts";
 import { openMenu } from "../dock/menu.ts";
 import { askFragment, menuItems } from "./contextai.ts";
-import { mountVisual, type Visual } from "./visual.ts";
+import { mountVisual, type Visual, type VisualDoc } from "./visual.ts";
 import { mountSlash, type Slash } from "./slash.ts";
 import { mountUploadPanel, type UploadPanel } from "./upload.ts";
 import type { UploadedFile } from "../../core/notion/upload.ts";
@@ -12,7 +12,8 @@ import { setLiveDocument } from "../../core/ai/conversation.ts";
 import { clearSelection, selection, type SelectedPage } from "../../core/state/selection.ts";
 import { session } from "../../core/persist/session.ts";
 import { readPage, forgetPage } from "../../core/notion/tree.ts";
-import { dropDraft, readDraft } from "../../core/persist/drafts.ts";
+import { runsById, type DocRuns } from "../../core/notion/blocks.ts";
+import { dropDraft, readDraft, draftRuns, type Draft } from "../../core/persist/drafts.ts";
 import { phaseByName, structureInText } from "../../core/method/structures.ts";
 import { makeSaver, type SaveState } from "./save.ts";
 import { mountOutline, type Outline } from "./outline.ts";
@@ -76,7 +77,12 @@ let page: SelectedPage | null = null;
 /** Cada apertura tiene su número: una lectura que llega tarde es de otro documento. */
 let seq = 0;
 
-const saver = makeSaver((state, detail) => { paintState(state, detail); });
+const saver = makeSaver(
+  (state, detail) => { paintState(state, detail); },
+  // Lo que Notion acaba de crear ya tiene id: se anota en la hoja para que el
+  // guardado siguiente lo deje quieto en vez de borrarlo y recrearlo.
+  (idMap) => { visual?.born(idMap); },
+);
 
 /* --- lo que dice la barra ------------------------------------------------- */
 
@@ -126,12 +132,21 @@ function text(): string {
   return visual?.markdown() ?? "";
 }
 
-/** Todo lo que mira el texto pasa por aquí: apartados, cuenta, guardado. */
-function changed(): void {
-  const now = text();
-  outline?.set(now);
-  paintCount(now);
-  saver.edit(now);
+/** Un documento vacío: lo que hay cuando todavía no hay editor. */
+const NO_DOC: VisualDoc = { content: "", runs: new Map() };
+
+/**
+ * Todo lo que mira el texto pasa por aquí: apartados, cuenta, guardado.
+ *
+ * Recibe el documento ya compuesto cuando quien llama lo tiene —escribir lo
+ * trae—, y lo compone él cuando no. Así una pulsación recorre el documento una
+ * sola vez, y no dos: la autoría y el texto salen de la misma pasada.
+ */
+function changed(doc?: VisualDoc): void {
+  const now = doc ?? visual?.doc() ?? NO_DOC;
+  outline?.set(now.content);
+  paintCount(now.content);
+  saver.edit(now.content, now.runs);
   // La ruta se relee del texto y los mandos se recuelgan donde toca. Los tres
   // son baratos y tienen que ser exactos: si se escribe la respuesta de una
   // pregunta, el icono cambia en ese mismo instante, y el mapa —que se puede
@@ -177,7 +192,10 @@ function takeNature(id: NatureId): void {
   const before = text();
   const after = withNature(before, id);
   if (after === before) return;
-  visual.set(after);
+  // Reescribir el documento mueve las líneas de sitio, así que sólo sobrevive
+  // la autoría anclada a un id de Notion: la apuntada por línea diría el color
+  // en las palabras equivocadas, y eso es peor que no decirlo.
+  visual.set(after, undefined, runsById(visual.doc().runs));
   changed();
 }
 
@@ -200,9 +218,9 @@ function selected(): string {
 function insertStructure(markdown: string, name: string): void {
   if (!visual) return;
 
-  const now = visual.markdown();
-  const tail = now.trim() ? now.trimEnd() + "\n\n" : "";
-  visual.set(tail + markdown);
+  const doc = visual.doc();
+  const tail = doc.content.trim() ? doc.content.trimEnd() + "\n\n" : "";
+  visual.set(tail + markdown, undefined, runsById(doc.runs));
   changed();
 
   // A donde empieza lo insertado y no al final: lo que hay que ver ahora es el
@@ -305,7 +323,7 @@ function buildPaper(): HTMLElement {
 
 function build(): void {
   visual = mountVisual();
-  visual.onEdit(() => { changed(); });
+  visual.onEdit((doc) => { changed(doc); });
 
   // Los archivos arrastrados sobre la hoja suben como los elegidos en la
   // barra: mismo motor, mismo panel, misma página abierta.
@@ -483,9 +501,9 @@ function ago(at: number): string {
  * guardar y se manda solo, como cualquier otro cambio; lo que se ofrece es lo
  * contrario: volver a lo que hay en Notion.
  */
-function recover(draft: { content: string; at: number }, stored: string): void {
+function recover(draft: Draft, stored: string, storedRuns: DocRuns): void {
   if (!visual) return;
-  visual.set(draft.content);
+  visual.set(draft.content, undefined, draftRuns(draft));
   changed();
 
   tell(`Se recuperó lo que no llegó a Notion (${ago(draft.at)}). Se está guardando.`, [
@@ -495,12 +513,13 @@ function recover(draft: { content: string; at: number }, stored: string): void {
       attrs: { type: "button" },
       on: { click: () => {
         if (!visual) return;
-        visual.set(stored);
+        visual.set(stored, undefined, storedRuns);
         changed();
         void saver.flush();
         tell("");
       } },
     }),
+
     el("button", {
       class: "wr__note__x",
       attrs: { type: "button", "aria-label": "Entendido" },
@@ -532,12 +551,15 @@ async function load(target: SelectedPage): Promise<void> {
   let content = "";
   let name = target.name;
   let clipUrls = new Map<string, string>();
+  let runs: DocRuns = new Map();
   try {
     const got = await readPage(token, target.id);
     if (mine !== seq) return;
     content = got.content;
     name = got.name || target.name;
     clipUrls = got.clipUrls;
+    runs = got.runs;
+
   } catch (error) {
     if (mine !== seq) return;
     // La hoja se queda cerrada a propósito: si no se pudo leer el documento,
@@ -557,15 +579,15 @@ async function load(target: SelectedPage): Promise<void> {
   const draft = await readDraft(target.id);
   if (mine !== seq) return;
 
-  visual.set(content, clipUrls);
-  saver.begin(target.id, name, content);
+  visual.set(content, clipUrls, runs);
+  saver.begin(target.id, name, content, runs);
   changed();
   // La columna se abre sola cuando el documento lleva la ruta escrita: es el
   // documento de Indagar, y lo primero que hace falta saber es en qué paso va.
   if (routeNow().steps.some((one) => one.present)) guide?.open();
   visual.focusStart();
 
-  if (draft && draft.content.trim() && draft.content !== content) recover(draft, content);
+  if (draft && draft.content.trim() && draft.content !== content) recover(draft, content, runs);
   else if (draft) void dropDraft(target.id);
 }
 
@@ -640,7 +662,7 @@ export function mountWriter(): void {
   setAddTarget((text) => {
     const clean = text.trim();
     if (!clean || !visual || root?.hidden) return;
-    visual.insertAtCaret(clean);
+    visual.insertAtCaret(clean, true);
   });
 
   // El asistente pregunta por lo que hay en la hoja, no por lo que llegó a Notion.

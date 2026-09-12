@@ -1,5 +1,6 @@
 import { el, render } from "../dom.ts";
-import { markdownToLines, type DocBlock } from "../../core/notion/blocks.ts";
+import { markdownToLines, runKey, tmpId, type DocBlock, type DocRun, type DocRuns } from "../../core/notion/blocks.ts";
+import { caretIn, dressRuns, hasAi, markAi, putCaret, readRuns, settle } from "./authored.ts";
 import { inline, headingsOf, type Heading } from "./markdown.ts";
 
 /**
@@ -34,17 +35,34 @@ export type VisualKind =
   | "h1" | "h2" | "h3"
   | "p" | "bullet" | "number" | "quote" | "divider" | "code" | "image";
 
+/**
+ * El documento entero: el texto que se guarda y de quién es cada trozo.
+ *
+ * Van juntos porque se sacan de la misma pasada: la autoría se apunta por el
+ * id del bloque si ya lo tiene, y por la línea en la que queda si todavía no
+ * —lo que la IA acaba de escribir aún no existe en Notion—, así que sólo se
+ * sabe dónde va cada cosa mientras se van poniendo las líneas.
+ */
+export interface VisualDoc {
+  content: string;
+  runs: Map<string, readonly DocRun[]>;
+}
+
 /** El cuerpo del editor. Se escribe por dentro; se lee por fuera. */
 export interface Visual {
   root: HTMLElement;
   /** Todo el documento, como Markdown con marcas de id. */
   markdown(): string;
+  /** El documento y su autoría, de una vez. Es lo que se guarda. */
+  doc(): VisualDoc;
+  /** Los bloques recien creados ya tienen id de Notion: se anotan sin repintar. */
+  born(idMap: ReadonlyMap<string, string>): void;
   /** Reemplaza todo el documento. Pierde el cursor: es para abrir o recuperar. */
-  set(markdown: string, urls?: ReadonlyMap<string, string>): void;
+  set(markdown: string, urls?: ReadonlyMap<string, string>, runs?: DocRuns): void;
   /** Pone el cursor al principio. */
   focusStart(): void;
   /** Se escribió algo: el que guarda, cuenta y saca apartados, escucha aquí. */
-  onEdit(run: (markdown: string) => void): void;
+  onEdit(run: (doc: VisualDoc) => void): void;
   /** La tecla «/» en un bloque vacío: dónde abrir el menú de bloques. */
   onSlash(run: (at: { x: number; y: number }) => void): void;
   /** El menú «/» está abierto: el teclado es suyo. */
@@ -58,7 +76,7 @@ export interface Visual {
   /** Llevar el cursor hasta un fragmento de texto, si está. */
   locate(fragment: string): void;
   /** Inserta Markdown al final del cursor —lo que trae «Añadir al documento». */
-  insertAtCaret(markdown: string): void;
+  insertAtCaret(markdown: string, ai?: boolean): void;
   /** Dicatado: escribe una frase donde esté el cursor. */
   dictate(said: string): void;
   /** El menú «/» eligió un bloque: el bloque vacío del cursor pasa a ser eso. */
@@ -76,7 +94,7 @@ export interface Visual {
   /** El texto de un bloque, sin marcas de id ni mandos de la plataforma. */
   plain(node: Element): string;
   /** Pone bloques nuevos justo detrás de uno y deja el cursor dentro. */
-  insertAfterBlock(node: Element, markdown: string): void;
+  insertAfterBlock(node: Element, markdown: string, ai?: boolean): void;
   /** Lleva el cursor a un bloque. */
   focusOn(node: Element): void;
   /** Archivos arrastrados sobre la hoja: la plataforma los cuelga. */
@@ -105,7 +123,10 @@ function kindOfTag(tag: string): VisualKind | null {
   }
 }
 
-const MARK = /<!--b:([a-f0-9-]+)-->\s*$/;
+const MARK = /<!--b:([A-Za-z0-9-]+)-->\s*$/;
+
+/** Un documento sin autoría apuntada: lo normal al insertar algo nuevo. */
+const NO_RUNS: DocRuns = new Map();
 
 export function mountVisual(): Visual {
   const root = el("div", {
@@ -131,11 +152,14 @@ export function mountVisual(): Visual {
    * lista —es como se lee—, y cada `li` guarda su propio id: en Notion cada
    * punto es un bloque, y el diff conserva los que no cambien.
    */
-  function nodesOf(markdown: string): HTMLElement[] {
+  function nodesOf(markdown: string, runs: DocRuns = NO_RUNS): HTMLElement[] {
     const lines = markdown.split("\n");
     const out: HTMLElement[] = [];
 
-    let group: { tag: "ul" | "ol"; items: { block: DocBlock; id: string | null }[] } | null = null;
+    let group: {
+      tag: "ul" | "ol";
+      items: { block: DocBlock; id: string | null; runs?: readonly DocRun[] }[];
+    } | null = null;
 
     const flush = (): void => {
       if (!group) return;
@@ -143,6 +167,7 @@ export function mountVisual(): Visual {
       for (const one of group.items) {
         const item = el("li", { text: one.block.text });
         item.setAttribute("data-b", one.id ?? "");
+        if (one.runs) dressRuns(item, one.runs);
         list.append(item);
       }
       const first = group.items[0]?.id ?? null;
@@ -156,6 +181,10 @@ export function mountVisual(): Visual {
     )) {
       const id = (MARK.exec(lines[born] ?? "") ?? [null, null])[1];
 
+      // Quién escribió cada trozo de esta línea, si alguien lo apuntó. Viene
+      // por id cuando el bloque ya existe en Notion y por línea cuando no.
+      const mine = runs.get(runKey(id, born));
+
       // La URL temporal de un adjunto no viaja en el Markdown —caduca a la
       // hora—: viaja aparte, en el mapa de urls que el cargador pasa al
       // montar. Si la línea es un adjunto con id, su URL va al bloque.
@@ -166,12 +195,16 @@ export function mountVisual(): Visual {
       if (block.type === "bullet" || block.type === "number") {
         const tag = block.type === "bullet" ? "ul" : "ol";
         if (!group || group.tag !== tag) { flush(); group = { tag, items: [] }; }
-        group.items.push({ block, id });
+        group.items.push(mine ? { block, id, runs: mine } : { block, id });
         continue;
       }
 
       flush();
-      out.push(nodeOf(block, id));
+      const node = nodeOf(block, id);
+      // El bloque de código se queda fuera: ahí dentro el color no dice quién
+      // lo escribió, diría qué clase de palabra es.
+      if (mine && block.type !== "code") dressRuns(node, mine);
+      out.push(node);
     }
 
     flush();
@@ -314,7 +347,10 @@ export function mountVisual(): Visual {
       case "HR": return `---${mark}`;
       case "PRE": {
         const lang = node.getAttribute("data-lang") || "markdown";
-        return "```" + lang + "\n" + plainOf(node) + "\n```";
+        // La marca va en la valla de cierre, que es donde la busca el lector:
+        // el cuerpo es texto libre y una linea de dentro podria leerse como
+        // marca. Sin esto el bloque de codigo perdia su id en cada vuelta.
+        return "```" + lang + "\n" + plainOf(node) + "\n```" + mark;
       }
       case "UL":
       case "OL": {
@@ -348,19 +384,49 @@ export function mountVisual(): Visual {
     }
   }
 
-  function markdown(): string {
-    const parts: string[] = [];
-    let prevGroup = false;
+  /**
+   * El documento entero, texto y autoría, en una sola pasada.
+   *
+   * Los huecos se cuidan aquí, al poner cada línea, y no con un `replace`
+   * sobre el texto ya unido: limpiarlos después movería las posiciones que se
+   * están apuntando, y son esas posiciones las que dicen de quién es cada
+   * línea mientras el bloque no tenga id de Notion.
+   */
+  function compose(): VisualDoc {
+    const lines: string[] = [];
+    const runs = new Map<string, readonly DocRun[]>();
+
+    /** Una línea al final, y dónde quedó. Dos huecos seguidos son un hueco. */
+    const put = (line: string): number => {
+      if (line === "" && (lines.length === 0 || lines[lines.length - 1] === "")) return -1;
+      lines.push(line);
+      return lines.length - 1;
+    };
+
+    const note = (owner: Element | undefined, at: number): void => {
+      if (!owner || at < 0 || !hasAi(owner)) return;
+      runs.set(runKey(owner.getAttribute("data-b") || null, at), readRuns(owner));
+    };
 
     for (const node of [...root.children]) {
-      const grouped = node.tagName === "UL" || node.tagName === "OL";
-      const wasGroup = prevGroup;
-      prevGroup = grouped;
       if (!plainOf(node).trim() && node.tagName === "P") continue;
-      parts.push(grouped && wasGroup ? "" : "", lineOf(node));
+      put("");
+      // Cada punto de una lista es un bloque de Notion con su propia autoría:
+      // la línea `i` de lo que escribe `lineOf` es el hijo `i`.
+      const kids = node.tagName === "UL" || node.tagName === "OL" ? [...node.children] : null;
+      const piece = lineOf(node).split("\n");
+      for (let i = 0; i < piece.length; i += 1) {
+        const at = put(piece[i] ?? "");
+        if (node.tagName === "PRE") continue;
+        note(kids ? kids[i] : (i === 0 ? node : undefined), at);
+      }
     }
 
-    return parts.join("\n").replace(/\n{3,}/g, "\n\n").replace(/^\n+/, "").trimEnd();
+    return { content: lines.join("\n").trimEnd(), runs };
+  }
+
+  function markdown(): string {
+    return compose().content;
   }
 
   /* --- editar ---------------------------------------------------------- */
@@ -402,12 +468,22 @@ export function mountVisual(): Visual {
     }
   }
 
-  const listeners = new Set<(markdown: string) => void>();
+  const listeners = new Set<(doc: VisualDoc) => void>();
 
   function edited(): void {
     if (editing) return;
     tidy();
-    for (const run of [...listeners]) run(markdown());
+    // Lo que la persona acaba de tocar deja de ser de la IA. Se mira sólo el
+    // bloque del cursor —es el único que una pulsación puede cambiar— y se
+    // repone el cursor después: retirar el color recompone los nodos de la
+    // línea, y el navegador lo dejaría donde estaba el nodo que ya no existe.
+    const block = caretBlock();
+    if (block) {
+      const at = caretIn(block);
+      if (settle(block) && at !== null) putCaret(block, at);
+    }
+    const doc = compose();
+    for (const run of [...listeners]) run(doc);
   }
 
   root.addEventListener("input", () => { edited(); });
@@ -539,7 +615,7 @@ export function mountVisual(): Visual {
    */
   function insertAttachment(file: { name: string; kind: "image" | "video" | "audio" | "pdf" | "file"; url?: string | null; blockId?: string }): void {
     const node = nodeOf({
-      id: file.blockId ?? "tmp",
+      id: file.blockId ?? tmpId(),
       type: "attachment",
       text: file.name,
       url: file.url ?? undefined,
@@ -581,10 +657,43 @@ export function mountVisual(): Visual {
   return {
     root,
     markdown,
-    set(markdown, urls) {
+    doc: compose,
+    /**
+     * Los ids reales de lo que acaba de crearse en Notion.
+     *
+     * Se anotan sobre los nodos que ya estan, sin volver a pintar nada: la
+     * persona sigue escribiendo mientras el guardado viaja y repintar le
+     * moveria el cursor. Sin esto el DOM se quedaba con `data-b` vacio para
+     * siempre, el bloque volvia a nacer temporal en el guardado siguiente y
+     * Notion lo borraba y lo recreaba en cada pulsacion.
+     *
+     * El emparejamiento es por el orden en que se pidieron los creates, que es
+     * el orden del documento: se recorren los nodos sin id y se les va dando
+     * el que les toca.
+     */
+    born(idMap) {
+      if (idMap.size === 0) return;
+      const real = [...idMap.values()];
+      let at = 0;
+      const give = (node: Element): void => {
+        if (at >= real.length) return;
+        if (node.getAttribute("data-b")) return;
+        const id = real[at];
+        if (id) { node.setAttribute("data-b", id); at += 1; }
+      };
+      for (const node of [...root.children]) {
+        if (!plainOf(node).trim() && node.tagName === "P") continue;
+        if (node.tagName === "UL" || node.tagName === "OL") {
+          for (const item of [...node.children]) give(item);
+          continue;
+        }
+        give(node);
+      }
+    },
+    set(markdown, urls, runs) {
       editing = true;
       clipUrls = new Map(urls ?? []);
-      render(root, ...nodesOf(markdown));
+      render(root, ...nodesOf(markdown, runs ?? NO_RUNS));
       if (root.children.length === 0) root.append(el("p", { class: "vis__b vis__b--p" }));
       editing = false;
     },
@@ -615,13 +724,16 @@ export function mountVisual(): Visual {
     plain(node) {
       return plainOf(node);
     },
-    insertAfterBlock(node, markdown) {
+    insertAfterBlock(node, markdown, ai) {
       // Sin Markdown que poner, se abre un párrafo vacío: es lo que pide el
       // mando de «responder aquí», que no trae texto sino sitio donde ponerlo.
       const fresh = markdown.trim()
         ? nodesOf(markdown)
         : [el("p", { class: "vis__b vis__b--p" })];
       if (fresh.length === 0) return;
+      // Lo que entra de una propuesta lo escribió el modelo, entero: se marca
+      // aquí, en la puerta, y desde este momento el color cuenta.
+      if (ai) markAi(fresh);
       node.after(...fresh);
       const last = fresh[fresh.length - 1];
       if (last) place(last);
@@ -685,10 +797,11 @@ export function mountVisual(): Visual {
       sel?.addRange(range);
       (found.parentElement ?? root).scrollIntoView({ block: "center", behavior: "smooth" });
     },
-    insertAtCaret(markdown) {
+    insertAtCaret(markdown, ai) {
       root.focus();
       for (const node of nodesOf("\n" + markdown + "\n")) {
         document.execCommand("insertHTML", false, "");
+        if (ai) markAi([node]);
         root.append(node);
       }
       const last = root.lastElementChild;

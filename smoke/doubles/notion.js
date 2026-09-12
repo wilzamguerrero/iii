@@ -21,6 +21,14 @@
   ];
   const doc = { text: lines.join(NL) };
   window.__doc = doc;
+  /** Un id como los que devuelve Notion: UUID hexadecimal. */
+  function uuid() {
+    const hex = (n) => Array.from({ length: n }, () => "0123456789abcdef"[Math.floor(Math.random() * 16)]).join("");
+    return hex(8) + "-" + hex(4) + "-" + hex(4) + "-" + hex(4) + "-" + hex(12);
+  }
+
+  /** Los bloques tal como quedan tras guardar: el humo lee de aqui el color. */
+  window.__blocks = () => blocks;
   window.__saved = [];
   /** Cuántas veces se mandó un lote de guardado, como lo contaría Notion. */
   window.__saves = 0;
@@ -115,23 +123,29 @@
         window.__saves += 1;
         const made = (body.children || []).map((child, at) => {
           const type = Object.keys(child).find((k) => k !== "object" && typeof child[k] === "object");
-          // Se guarda como lo manda la plataforma y se devuelve como lo
-          // devolveria Notion: plain_text en cada fragmento.
-          const part = JSON.parse(JSON.stringify(child[type]));
-          if (part && part.rich_text) {
-            part.rich_text = part.rich_text.map((s) => ({
-              plain_text: (s.text && s.text.content) || s.plain_text || "",
-            }));
-          }
-          const out = { id: "new-" + Math.random().toString(36).slice(2, 8), object: "block", type, has_children: false };
+          const part = asRich(JSON.parse(JSON.stringify(child[type])));
+          // Un id como los de Notion: UUID hexadecimal. El doble los inventaba
+          // en base 36, con letras que un UUID no tiene, y eso no es lo que
+          // devuelve Notion.
+          const out = { id: uuid(), object: "block", type, has_children: false };
           out[type] = part;
           return out;
         });
-        // El doble conserva el orden relativo: simplificacion suficiente,
-        // porque la plataforma ordena con `after` y el humo no prueba el
-        // orden de Notion sino que se pide.
-        const after = body.after ? blocks.findIndex((b) => b.id === body.after) : blocks.length - 1;
-        blocks.splice(after + 1, 0, ...made);
+        /* Se colocan como los coloca Notion, no como convendria.
+
+           Con `after`, detras de ese bloque. **Sin `after`, al final de la
+           pagina**: esa es la regla de Notion y aqui hay que obedecerla. El
+           doble hacia otra cosa —los ponia detras del ultimo insertado— y con
+           eso un fallo real de orden se veia bien en la prueba: tres parrafos
+           escritos seguidos en medio del documento acababan al final en Notion
+           y aqui parecian correctos. */
+        if (body.after) {
+          const at = blocks.findIndex((b) => b.id === body.after);
+          if (at >= 0) blocks.splice(at + 1, 0, ...made);
+          else blocks.push(...made);
+        } else {
+          blocks.push(...made);
+        }
         window.__made = window.__made || [];
         for (const one of made) window.__made.push(one);
         // Lo creado también es guardado: el humo busca lo escrito aquí.
@@ -148,13 +162,7 @@
           const type = Object.keys(body)[0];
           if (type) {
             found.type = type;
-            const part = JSON.parse(JSON.stringify(body[type]));
-            if (part && part.rich_text) {
-              part.rich_text = part.rich_text.map((s) => ({
-                plain_text: (s.text && s.text.content) || s.plain_text || "",
-              }));
-            }
-            found[type] = part;
+            found[type] = asRich(JSON.parse(JSON.stringify(body[type])));
           }
           window.__saved.push(richOf(found));
           return json({ id });
@@ -174,6 +182,23 @@
     }
     return real(input, init);
   };
+
+  /* Se guarda como lo manda la plataforma y se devuelve como lo devolveria
+     Notion: plain_text en cada fragmento y las anotaciones tal cual.
+
+     Las anotaciones se conservan a proposito. El color de texto es lo que
+     dice quien escribio cada trozo —la IA o la persona—, asi que un doble que
+     lo tirase al guardar no podria ver nunca si eso llega a Notion, que es
+     justo lo que hay que comprobar. */
+  function asRich(part) {
+    if (!part || !part.rich_text) return part;
+    part.rich_text = part.rich_text.map((s) => {
+      const one = { plain_text: (s.text && s.text.content) || s.plain_text || "" };
+      if (s.annotations) one.annotations = s.annotations;
+      return one;
+    });
+    return part;
+  }
 
   function richOf(block) {
     const part = block[block.type];

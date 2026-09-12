@@ -337,6 +337,10 @@
 
 /* El lienzo. Se arrastra para moverse y se acerca con ctrl+rueda: `grab` dice
    que se puede agarrar, `grabbing` que ya se está agarrando. */
+/* El lienzo no es texto que se lea seguido, es un plano que se arrastra. Sin
+   esto, cruzar el fondo con el botón pulsado va marcando de azul los nombres de
+   los nodos que pasan por debajo, y lo que se quería era mover el mapa. Lo del
+   lado sí se puede marcar y copiar: está fuera del escenario. */
 .map__stage {
   flex: 1 1 auto;
   min-width: 0;
@@ -344,6 +348,8 @@
   overflow: hidden;
   cursor: grab;
   touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .map__stage:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: -1px; }

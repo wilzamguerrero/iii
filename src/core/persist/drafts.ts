@@ -20,6 +20,8 @@
  * existir y el editor tiene que funcionar igual, sólo sin red de seguridad.
  */
 
+import type { DocRun, DocRuns } from "../notion/blocks.ts";
+
 const DB_NAME = "3i";
 const DB_VERSION = 1;
 const STORE = "drafts";
@@ -30,8 +32,28 @@ export interface Draft {
   /** El nombre que tenía el documento, para poder nombrarlo sin pedirlo a Notion. */
   name: string;
   content: string;
+  /**
+   * Quién escribió cada trozo, por bloque.
+   *
+   * Como pares y no como `Map` porque un borrador es un dato guardado y los
+   * datos guardados se leen mejor cuanto más simples son. Va aquí porque el
+   * color de la IA no se puede sacar del texto: si el borrador no lo trajera,
+   * recuperar lo que no llegó a Notion devolvería el texto entero como
+   * escrito por la persona, que es justo lo contrario de lo que pasó.
+   */
+  runs?: readonly (readonly [string, readonly DocRun[]])[];
   /** Cuándo se escribió, en milisegundos. */
   at: number;
+}
+
+/** La autoría del borrador, como la quiere el editor. */
+export function draftRuns(draft: Draft): DocRuns {
+  return new Map(draft.runs ?? []);
+}
+
+/** Y al revés: como se guarda. */
+export function runEntries(runs: DocRuns): [string, readonly DocRun[]][] {
+  return [...runs].map(([key, list]) => [key, [...list]] as [string, readonly DocRun[]]);
 }
 
 let opening: Promise<IDBDatabase | null> | null = null;

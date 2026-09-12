@@ -1,9 +1,10 @@
 import { notionRequest } from "./client.ts";
 import { pageTitle, type NotionPage } from "./types.ts";
 import {
-  appendChildren, blocksToMarkdown, createNotionPage, markedMarkdownToBlocks,
-  notionBodyOf, readBlocks, type DocBlock,
+  appendChildren, blocksToMarkdownWithRuns, createNotionPage, markedMarkdownToBlocks,
+  notionBodyOf, readBlocks, type DocBlock, type DocRun, type DocRuns,
 } from "./blocks.ts";
+
 import { applyOperations, diffBlocks } from "./diff.ts";
 
 /**
@@ -237,7 +238,12 @@ export async function readPage(
   token: string,
   pageId: string,
   signal?: AbortSignal,
-): Promise<{ name: string; content: string; clipUrls: Map<string, string> }> {
+): Promise<{
+  name: string;
+  content: string;
+  clipUrls: Map<string, string>;
+  runs: Map<string, readonly DocRun[]>;
+}> {
   const [page, blocks] = await Promise.all([
     notionRequest<NotionPage>(token, `/pages/${pageId}`, { signal }),
     readBlocks(token, pageId, signal),
@@ -249,7 +255,10 @@ export async function readPage(
   for (const block of blocks) {
     if (block.type === "attachment" && block.url) clipUrls.set(block.id, block.url);
   }
-  return { name: pageTitle(page, UNTITLED_PAGE), content: blocksToMarkdown(blocks), clipUrls };
+  // Y con ellas, quién escribió cada trozo: el color de Notion dice la
+  // autoría, y el Markdown no sabe llevarla dentro.
+  const { content, runs } = blocksToMarkdownWithRuns(blocks);
+  return { name: pageTitle(page, UNTITLED_PAGE), content, clipUrls, runs };
 }
 
 /**
@@ -266,12 +275,13 @@ export async function writePage(
   token: string,
   pageId: string,
   content: string,
-): Promise<void> {
+  runs?: DocRuns,
+): Promise<Map<string, string>> {
   const state = pageStates.get(pageId) ?? { blocks: [] };
-  const draft = markedMarkdownToBlocks(content);
+  const draft = markedMarkdownToBlocks(content, runs);
 
   const diff = diffBlocks(state.blocks, draft);
-  if (diff.changes === 0) return;
+  if (diff.changes === 0) return new Map();
 
   const result = await applyOperations(token, pageId, diff);
 
@@ -294,6 +304,11 @@ export async function writePage(
   }
 
   pageStates.set(pageId, { blocks: next.map((block) => ({ ...block })) });
+  // Y quien llama se lo lleva: el editor tiene que aprender los ids reales de
+  // lo que acaba de crearse. Si no, esos bloques vuelven a nacer temporales en
+  // el guardado siguiente y Notion los borra y los recrea otra vez, perdiendo
+  // sus comentarios y su historial en cada pulsacion.
+  return result.idMap;
 }
 
 /** Olvidar el estado confirmado: la página se cerró. */

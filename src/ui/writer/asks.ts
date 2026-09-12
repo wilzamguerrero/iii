@@ -322,7 +322,7 @@ export function mountAsks(options: AsksOptions): Asks {
         why: `Para: ${ask.question}`,
         verb: "Poner debajo de la pregunta",
         onInsert: (text) => {
-          visual.insertAfterBlock(tailOf(block), text);
+          visual.insertAfterBlock(tailOf(block), text, true);
           options.changed();
         },
         onRedo: () => { draft(ask); },
@@ -380,7 +380,7 @@ export function mountAsks(options: AsksOptions): Asks {
         why: `En: ${step.head}`,
         verb: "Añadir al paso",
         onInsert: (text) => {
-          visual.insertAfterBlock(lastOf(block), text);
+          visual.insertAfterBlock(lastOf(block), text, true);
           options.changed();
         },
         onRedo: () => { askFor(stepId); },
@@ -452,14 +452,14 @@ export function mountAsks(options: AsksOptions): Asks {
       const found = placed.find((one) => flat(one.ask.question) === flat(point.question));
       // Ya respondida a mano: no se pisa. Lo escrito manda sobre lo propuesto.
       if (!found || found.ask.answered) continue;
-      visual.insertAfterBlock(tailOf(found.block), point.answer);
+      visual.insertAfterBlock(tailOf(found.block), point.answer, true);
     }
 
     if (made.situated) {
       const route = options.route();
       const step = route.steps.find((one) => one.id === "situada");
       const head = step ? headBlock(step) : null;
-      if (head && !step?.done) visual.insertAfterBlock(lastOf(head), made.situated);
+      if (head && !step?.done) visual.insertAfterBlock(lastOf(head), made.situated, true);
     }
 
     options.changed();

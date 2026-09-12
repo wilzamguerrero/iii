@@ -2,6 +2,18 @@ import { openPage, say, wait } from "../part.mjs";
 
 const cdp = await openPage(["notion.js", "asistente.js"]);
 
+/** Espera a que el guardado se cierre, mirando lo que dice la pantalla. */
+async function saved(cdp, limit = 8000) {
+  const until = Date.now() + limit;
+  let state = "";
+  while (Date.now() < until) {
+    state = await cdp.evaluate(`document.querySelector(".wr__state").textContent`);
+    if (state === "Guardado en Notion") return state;
+    await wait(120);
+  }
+  return state;
+}
+
 /* --- el papel y su ventana ---------------------------------------------- */
 const handle = await cdp.evaluate(`(() => {
   const node = document.querySelector(".ai-handle");
@@ -126,6 +138,177 @@ const added = await cdp.evaluate(`(() => {
 })()`);
 say(added.after > added.before, "anadir entra en el documento abierto", `${added.before} -> ${added.after}`);
 say(added.tail.indexOf("Que decide una persona al salir del ascensor") >= 0, "con la respuesta dentro", added.tail.slice(0, 40));
+
+/* --- de quien es cada palabra ------------------------------------------- */
+
+/* Se pidio que lo que redacta la IA se vea de otro color y que el color se
+   retire de las palabras en cuanto la persona las toca. Lo que se comprueba
+   aqui es la cadena entera: entra con color, se retira al escribir palabra a
+   palabra, y el color llega a Notion como color de texto nativo. */
+
+const painted = await cdp.evaluate(`(() => {
+  const spans = [...document.querySelectorAll(".vis [data-ai]")];
+  const one = spans[0];
+  const line = one ? one.closest(".vis > *") : null;
+  const note = one ? getComputedStyle(one) : null;
+  const plain = line ? getComputedStyle(line) : null;
+  return {
+    n: spans.length,
+    klass: one ? one.className : "",
+    text: one ? one.textContent : "",
+    was: one ? one.getAttribute("data-ai-was") : null,
+    ink: note ? note.color : "",
+    plainInk: plain ? plain.color : "",
+    back: note ? note.backgroundColor : "",
+    deco: note ? note.textDecorationLine : "",
+    style: note ? note.fontStyle : "",
+  };
+})()`);
+say(painted.n >= 1, "lo que escribe la IA entra marcado como suyo", "trozos=" + painted.n);
+say(painted.klass === "vis__ai", "con la clase que le da color", painted.klass);
+say(painted.text.indexOf("Falta decir quien se pierde") === 0,
+  "y lo marcado es la respuesta del modelo, entera", painted.text.slice(0, 40));
+say(painted.was === painted.text,
+  "que recuerda lo que escribio, para saber luego que se le toco",
+  JSON.stringify({ was: (painted.was || "").slice(0, 16), hoy: painted.text.slice(0, 16) }));
+say(painted.ink !== painted.plainInk, "se ve de otro color que lo demas",
+  `ia=${painted.ink} persona=${painted.plainInk}`);
+say(painted.back === "rgba(0, 0, 0, 0)" && painted.deco === "none" && painted.style === "normal",
+  "y solo de color: es texto del documento, no un aviso",
+  JSON.stringify({ fondo: painted.back, raya: painted.deco, cursiva: painted.style }));
+
+/* Tocar una letra de una palabra del modelo: la palabra entera pasa a ser de
+   quien la toco, que media palabra de cada color seria un tachon. */
+const touched = await cdp.evaluate(`(() => {
+  const span = document.querySelector(".vis [data-ai]");
+  const line = span.closest(".vis > *");
+  const node = span.firstChild;
+  node.textContent = "Faltax" + node.textContent.slice(5);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  const range = document.createRange();
+  range.setStart(node, 6);
+  range.collapse(true);
+  sel.addRange(range);
+  document.querySelector(".vis").dispatchEvent(new Event("input", { bubbles: true }));
+  const mine = [...line.childNodes]
+    .filter((n) => n.nodeType === 3 || !n.hasAttribute("data-ai"))
+    .map((n) => n.textContent).join("");
+  const still = [...line.querySelectorAll("[data-ai]")].map((n) => n.textContent).join("");
+  const now = window.getSelection();
+  return {
+    mine,
+    still,
+    text: line.textContent,
+    caret: now.anchorNode ? (now.anchorNode.textContent || "").slice(0, now.anchorOffset).slice(-6) : null,
+  };
+})()`);
+say(touched.mine.indexOf("Faltax") >= 0,
+  "tocar una letra saca del color la palabra entera", JSON.stringify(touched.mine.slice(0, 24)));
+say(touched.still.indexOf("decir quien se pierde") >= 0,
+  "y lo que no se toco sigue siendo del modelo", touched.still.slice(0, 30));
+say(touched.text.indexOf("Faltax decir quien se pierde") >= 0,
+  "sin mover ni perder una letra por el camino", touched.text.slice(0, 40));
+say(touched.caret === "Faltax",
+  "y el cursor se queda detras de lo que se acaba de escribir", JSON.stringify(touched.caret));
+
+/* El color viaja a Notion como color de texto nativo, con el guardado de
+   siempre: no hay un guardado aparte para esto. */
+await saved(cdp);
+const kept = await cdp.evaluate(`(() => {
+  const out = [];
+  for (const one of window.__blocks()) {
+    const part = one[one.type];
+    for (const bit of (part && part.rich_text) || []) {
+      out.push({ text: bit.plain_text, color: bit.annotations ? bit.annotations.color : null });
+    }
+  }
+  return { spans: out, state: document.querySelector(".wr__state").textContent };
+})()`);
+const suyo = kept.spans.find((one) => one.text.indexOf("decir quien se pierde") >= 0);
+const mio = kept.spans.find((one) => one.text.indexOf("Faltax") >= 0);
+say(kept.state === "Guardado en Notion", "el color llega con el guardado de siempre", kept.state);
+say(suyo !== undefined && suyo.color === "blue",
+  "lo del modelo va a Notion con su color", JSON.stringify(suyo && suyo.text.slice(0, 24)));
+say(mio !== undefined && !mio.color,
+  "y lo que toco la persona va sin color, como cualquier cosa suya",
+  JSON.stringify(mio && { text: mio.text.slice(0, 12), color: mio.color }));
+
+/* --- un cambio de color sin cambio de texto tambien se guarda ------------ */
+
+/* Escribir una letra dentro de una palabra del modelo y borrarla deja el texto
+   exactamente como estaba, pero la palabra ya no es suya. Si el guardado
+   mirase solo el texto, esto no viajaria nunca y el color se quedaria puesto
+   en Notion diciendo algo que ya no es verdad. */
+const onlyColor = await cdp.evaluate(`(() => {
+  const span = [...document.querySelectorAll(".vis [data-ai]")]
+    .find((one) => (one.textContent || "").indexOf("ascensor") >= 0);
+  const line = span.closest(".vis > *");
+  const was = line.textContent;
+  const node = span.lastChild;
+  const cut = node.textContent.indexOf("ascensor") + "ascensor".length;
+  node.textContent = node.textContent.slice(0, cut) + "z" + node.textContent.slice(cut);
+  const sel = window.getSelection();
+  const put = (where, offset) => {
+    sel.removeAllRanges();
+    const range = document.createRange();
+    range.setStart(where, offset);
+    range.collapse(true);
+    sel.addRange(range);
+  };
+  put(node, cut + 1);
+  document.querySelector(".vis").dispatchEvent(new Event("input", { bubbles: true }));
+
+  const mid = line.textContent;
+  const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
+  let end = null;
+  let step = walker.nextNode();
+  while (step) {
+    if ((step.textContent || "").indexOf("ascensorz") >= 0) { end = step; break; }
+    step = walker.nextNode();
+  }
+  const loose = end !== null && end.parentElement !== null && !end.parentElement.closest("[data-ai]");
+  if (end) {
+    const gone = end.textContent.indexOf("ascensorz") + "ascensorz".length;
+    end.textContent = end.textContent.slice(0, gone - 1) + end.textContent.slice(gone);
+    put(end, gone - 1);
+  }
+  document.querySelector(".vis").dispatchEvent(new Event("input", { bubbles: true }));
+  return {
+    loose,
+    grew: mid.indexOf("ascensorz") >= 0,
+    same: line.textContent === was,
+    state: document.querySelector(".wr__state").textContent,
+    sent: window.__saved.length,
+  };
+})()`);
+say(onlyColor.grew === true && onlyColor.loose === true,
+  "escribir dentro de una palabra del modelo la suelta del color entera",
+  JSON.stringify({ escrita: onlyColor.grew, suelta: onlyColor.loose }));
+say(onlyColor.same === true, "y borrar la letra deja el texto como estaba", "igual=" + onlyColor.same);
+say(onlyColor.state === "Sin guardar",
+  "aun asi queda algo que guardar: cambio el color, no el texto", onlyColor.state);
+
+await saved(cdp);
+const settled = await cdp.evaluate(`(() => {
+  const out = [];
+  for (const one of window.__blocks()) {
+    const part = one[one.type];
+    for (const bit of (part && part.rich_text) || []) {
+      if (bit.plain_text.indexOf("ascensor") >= 0) {
+        out.push({ text: bit.plain_text, color: bit.annotations ? bit.annotations.color : null });
+      }
+    }
+  }
+  return { spans: out, state: document.querySelector(".wr__state").textContent, sent: window.__saved.length };
+})()`);
+say(settled.state === "Guardado en Notion", "el cambio de solo color llega a Notion", settled.state);
+say(settled.sent > onlyColor.sent, "y viaja de verdad, no se queda en la pantalla",
+  `${onlyColor.sent} -> ${settled.sent}`);
+say(settled.spans.some((one) => one.text.indexOf("ascensor") >= 0 && !one.color),
+  "la palabra que se toco queda sin color alli tambien",
+  JSON.stringify(settled.spans.map((one) => [one.text.slice(-14), one.color])));
+
 
 /* --- se mueve y se queda donde se deja --------------------------------- */
 const moved = await cdp.evaluate(`(() => {
@@ -259,5 +442,99 @@ say(calm.hidden === false && calm.shell === false && calm.opacity === "1",
   "con movimiento reducido abre sin pliego y se ve desde el principio",
   JSON.stringify(calm));
 await cdp.send("Emulation.setEmulatedMedia", { features: [] });
+
+/* --- lo que se escribe se queda donde se escribio ----------------------- */
+
+/* Tres bloques nuevos escritos seguidos en medio del documento. Notion no los
+   pone donde uno cree: sin ancla van **al final de la pagina**, asi que el
+   segundo y el tercero tienen que colgar del anterior. Cuando esto fallaba, el
+   primero se quedaba en su sitio y los otros dos se iban al final —y con ellos
+   el texto de la persona, a otro apartado—. */
+
+await cdp.evaluate(`(() => {
+  const vis = document.querySelector(".vis");
+  const blocks = [...vis.children];
+  // Un bloque de en medio, con otro detras: es el caso que se rompia.
+  const at = blocks.find((n) => n.tagName === "P" && n.textContent.trim() && n.nextElementSibling);
+  window.__anchorText = at.textContent.trim();
+  window.__tailText = at.nextElementSibling.textContent.trim();
+  for (const text of ["Parrafo nuevo uno", "Parrafo nuevo dos", "Parrafo nuevo tres"].reverse()) {
+    const p = document.createElement("p");
+    p.className = "vis__b vis__b--p";
+    p.setAttribute("data-b", "");
+    p.textContent = text;
+    at.after(p);
+  }
+  vis.dispatchEvent(new InputEvent("input", { bubbles: true }));
+})()`);
+
+const landed = await saved(cdp);
+say(landed === "Guardado en Notion", "los tres bloques nuevos llegan a Notion", landed);
+
+const order = await cdp.evaluate(`(() => {
+  const text = (b) => {
+    const part = b[b.type];
+    const rich = (part && part.rich_text) || [];
+    return rich.map((s) => s.plain_text || "").join("");
+  };
+  const all = window.__blocks().map(text);
+  const at = all.indexOf(window.__anchorText);
+  return {
+    trio: all.slice(at + 1, at + 4),
+    tail: all[at + 4],
+    want: window.__tailText,
+    last: all[all.length - 1],
+  };
+})()`);
+
+say(order.trio.join(" | ") === "Parrafo nuevo uno | Parrafo nuevo dos | Parrafo nuevo tres",
+  "y quedan los tres seguidos, en su orden, detras del bloque donde se escribieron",
+  order.trio.join(" | "));
+say(order.tail === order.want,
+  "sin empujar lo que venia detras", `${order.tail} != ${order.want}`);
+say(order.last !== "Parrafo nuevo tres" && order.last !== "Parrafo nuevo dos",
+  "y no se van al final de la pagina, que es lo que hace Notion sin ancla",
+  order.last);
+
+/* --- el bloque de codigo conserva su id -------------------------------- */
+
+/* Sin marca de id, cada guardado lo borraba y lo recreaba: se llevaba por
+   delante sus comentarios de Notion y su historial, y gastaba dos operaciones
+   donde no tocaba ninguna. */
+
+await cdp.evaluate(`(() => {
+  const vis = document.querySelector(".vis");
+  const pre = document.createElement("pre");
+  pre.className = "vis__b vis__b--code";
+  pre.setAttribute("data-b", "");
+  pre.setAttribute("data-lang", "json");
+  pre.textContent = '{"nodos":[]}';
+  vis.append(pre);
+  vis.dispatchEvent(new InputEvent("input", { bubbles: true }));
+})()`);
+await saved(cdp);
+
+const born = await cdp.evaluate(`(() => {
+  const one = window.__blocks().find((b) => b.type === "code");
+  return one ? one.id : null;
+})()`);
+say(typeof born === "string" && born.length > 0, "el bloque de codigo existe en Notion", String(born));
+
+/* Se toca otra cosa y se guarda otra vez: el codigo no se ha movido. */
+await cdp.evaluate(`(() => {
+  const vis = document.querySelector(".vis");
+  const p = [...vis.children].find((n) => n.tagName === "P" && n.textContent.trim());
+  p.textContent = p.textContent + " x";
+  vis.dispatchEvent(new InputEvent("input", { bubbles: true }));
+})()`);
+await saved(cdp);
+
+const stayed = await cdp.evaluate(`(() => {
+  const all = window.__blocks().filter((b) => b.type === "code");
+  return { id: all[0] ? all[0].id : null, many: all.length };
+})()`);
+say(stayed.id === born, "y sobrevive al guardado siguiente con el mismo id",
+  `${born} -> ${stayed.id}`);
+say(stayed.many === 1, "sin duplicarse", `n=${stayed.many}`);
 
 cdp.close();

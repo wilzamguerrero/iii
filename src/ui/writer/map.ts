@@ -614,12 +614,45 @@ export function mountMap(options: MapOptions): RouteMap {
   /* --- mover el lienzo ---------------------------------------------------- */
 
   function place(): void {
-    canvas.style.transform = `translate(${Math.round(tx)}px, ${Math.round(ty)}px) scale(${zoom})`;
+    const size = Math.round(zoom * 1000) / 1000;
+    canvas.style.transform = `translate(${Math.round(tx)}px, ${Math.round(ty)}px) scale(${size})`;
   }
 
+  /** Acercar o alejar desde los botones: el centro de la pantalla manda. */
   function scale(next: number): void {
-    zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Number(next.toFixed(2))));
+    const box = stage.getBoundingClientRect();
+    scaleAt(next, box.left + box.width / 2, box.top + box.height / 2);
+  }
+
+  /**
+   * Acercar hacia un punto de la pantalla, no hacia el centro.
+   *
+   * Se pasa el punto del escenario a coordenadas del lienzo, se cambia la
+   * escala y se recoloca para que ese mismo punto del lienzo siga cayendo
+   * debajo del puntero. Sin esto, acercarse con la rueda a un nodo del borde lo
+   * echa fuera de la pantalla y hay que volver a buscarlo arrastrando.
+   */
+  function scaleAt(next: number, screenX: number, screenY: number): void {
+    const before = zoom;
+    const after = clampZoom(next);
+    if (after === before) return;
+    const box = stage.getBoundingClientRect();
+    const atX = screenX - box.left;
+    const atY = screenY - box.top;
+    // Dónde cae ese punto dentro del lienzo, antes de mover nada.
+    const onX = (atX - tx) / before;
+    const onY = (atY - ty) / before;
+    zoom = after;
+    tx = atX - onX * after;
+    ty = atY - onY * after;
     place();
+  }
+
+  /* Sin redondear: un panel táctil manda pasos diminutos, y cortar a dos
+     decimales los dejaría todos en cero —el mapa no se movería nunca—. Lo que
+     se pinta sí se redondea, en `place()`. */
+  function clampZoom(next: number): number {
+    return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next));
   }
 
   /** Todo el grafo dentro de la pantalla, centrado. */
@@ -627,13 +660,10 @@ export function mountMap(options: MapOptions): RouteMap {
     const box = stage.getBoundingClientRect();
     if (box.width < 40) return;
     const margin = 28;
-    zoom = Math.min(
-      ZOOM_MAX,
-      Math.max(ZOOM_MIN, Math.min(
-        (box.width - margin * 2) / CANVAS_W,
-        (box.height - margin * 2) / CANVAS_H,
-      )),
-    );
+    zoom = clampZoom(Math.min(
+      (box.width - margin * 2) / CANVAS_W,
+      (box.height - margin * 2) / CANVAS_H,
+    ));
     tx = (box.width - CANVAS_W * zoom) / 2;
     ty = (box.height - CANVAS_H * zoom) / 2;
     place();
@@ -659,10 +689,16 @@ export function mountMap(options: MapOptions): RouteMap {
   stage.addEventListener("pointerup", letGo);
   stage.addEventListener("pointercancel", letGo);
 
+  /* La rueda acerca y aleja, sin tecla de por medio: el escenario no tiene nada
+     que desplazar —se mueve arrastrando—, así que la rueda no le hace falta
+     para otra cosa. Se acerca hacia el puntero, que es donde se está mirando.
+     El pellizco del panel táctil llega como rueda con Ctrl y hace lo mismo. */
   stage.addEventListener("wheel", (event) => {
-    if (!event.ctrlKey && !event.metaKey) return;
     event.preventDefault();
-    scale(zoom - event.deltaY * 0.002);
+    // El pellizco manda pasos grandes y la rueda pasos de línea; se igualan
+    // para que ninguno de los dos se pase de largo con un solo gesto.
+    const step = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
+    scaleAt(zoom * Math.exp(-step * 0.0016), event.clientX, event.clientY);
   }, { passive: false });
 
   /* --- abrir, cerrar ------------------------------------------------------ */

@@ -1,6 +1,7 @@
 import { session } from "../../core/persist/session.ts";
 import { writePage } from "../../core/notion/tree.ts";
-import { dropDraft, putDraft } from "../../core/persist/drafts.ts";
+import { dropDraft, putDraft, runEntries } from "../../core/persist/drafts.ts";
+import type { DocRuns } from "../../core/notion/blocks.ts";
 
 /**
  * Guardar mientras se escribe.
@@ -34,11 +35,14 @@ export type SaveState =
 const DRAFT_MS = 500;
 const NOTION_MS = 1400;
 
+/** Lo creado acaba de nacer en Notion: estos son sus ids de verdad. */
+export type OnBorn = (idMap: ReadonlyMap<string, string>) => void;
+
 export interface Saver {
   /** Empieza a llevar este documento, con lo que Notion tiene ahora. */
-  begin(pageId: string, name: string, content: string): void;
+  begin(pageId: string, name: string, content: string, runs?: DocRuns): void;
   /** La persona escribió. */
-  edit(content: string): void;
+  edit(content: string, runs?: DocRuns): void;
   /** Mandarlo ya: Ctrl+S, o al cerrar. */
   flush(): Promise<void>;
   /** Suelta el documento. Lo que quede sin mandar se manda de camino. */
@@ -48,15 +52,44 @@ export interface Saver {
   detail(): string;
 }
 
-export function makeSaver(onChange: (state: SaveState, detail: string) => void): Saver {
+const NO_RUNS: DocRuns = new Map();
+
+/**
+ * Una firma corta de la autoría, para saber si cambió.
+ *
+ * Hace falta porque el color viaja a Notion y puede cambiar **sin que cambie
+ * el texto**: tocar una palabra que escribió la IA y dejarla igual la pasa a
+ * ser de la persona. Comparar sólo el texto daría ese documento por guardado
+ * y el color se quedaría puesto en Notion diciendo algo que ya no es verdad.
+ */
+function runsKey(runs: DocRuns): string {
+  if (runs.size === 0) return "";
+  return [...runs]
+    .map(([key, list]) => `${key}=${list.map((one) => (one.ai === true ? "1:" : "0:") + one.text.length).join(",")}`)
+    .sort()
+    .join("|");
+}
+
+export function makeSaver(
+  onChange: (state: SaveState, detail: string) => void,
+  onBorn?: OnBorn,
+): Saver {
   let pageId = "";
   let name = "";
   /** Lo último que Notion confirmó. */
   let stored = "";
+  let storedKey = "";
   /** Lo que hay en pantalla. */
   let current = "";
+  let currentRuns: DocRuns = NO_RUNS;
+  let currentKey = "";
   let state: SaveState = "clean";
   let detail = "";
+
+  /** ¿Hay algo sin mandar? Texto o color: las dos cosas viajan a Notion. */
+  function dirty(): boolean {
+    return current !== stored || currentKey !== storedKey;
+  }
 
   let draftTimer: number | undefined;
   let notionTimer: number | undefined;
@@ -69,7 +102,7 @@ export function makeSaver(onChange: (state: SaveState, detail: string) => void):
     // «saving» también avisa: mientras la petición viaja, el texto tampoco está
     // todavía en Notion.
     guard(next === "dirty" || next === "failed" || next === "saving"
-      || (next === "local" && current !== stored));
+      || (next === "local" && dirty()));
     onChange(state, detail);
   }
 
@@ -98,7 +131,13 @@ export function makeSaver(onChange: (state: SaveState, detail: string) => void):
 
   async function toDraft(): Promise<void> {
     if (!pageId) return;
-    await putDraft({ pageId, name, content: current, at: Date.now() });
+    await putDraft({
+      pageId,
+      name,
+      content: current,
+      ...(currentRuns.size > 0 ? { runs: runEntries(currentRuns) } : {}),
+      at: Date.now(),
+    });
   }
 
   async function push(): Promise<void> {
@@ -109,17 +148,23 @@ export function makeSaver(onChange: (state: SaveState, detail: string) => void):
 
     const id = pageId;
     const sent = current;
-    if (sent === stored) { announce("clean"); return; }
+    const sentRuns = currentRuns;
+    const sentKey = currentKey;
+    if (sent === stored && sentKey === storedKey) { announce("clean"); return; }
 
     inFlight = true;
     announce("saving");
 
     try {
-      await writePage(token, id, sent);
+      const born = await writePage(token, id, sent, sentRuns);
       // Mientras viajaba pudo cambiarse de documento: lo que sigue es de otro.
       if (id !== pageId) return;
+      // Los bloques que acaban de crearse ya tienen id de Notion: el editor
+      // tiene que saberlo antes de volver a guardar.
+      if (born.size > 0) onBorn?.(born);
       stored = sent;
-      if (current === stored) {
+      storedKey = sentKey;
+      if (!dirty()) {
         announce("clean");
         void dropDraft(id);
       } else {
@@ -137,21 +182,29 @@ export function makeSaver(onChange: (state: SaveState, detail: string) => void):
   }
 
   return {
-    begin(nextId, nextName, content) {
+    begin(nextId, nextName, content, runs) {
       clearTimers();
       pageId = nextId;
       name = nextName;
       stored = content;
       current = content;
+      currentRuns = runs ?? NO_RUNS;
+      currentKey = runsKey(currentRuns);
+      storedKey = currentKey;
       announce(session.get()?.token ? "clean" : "local");
     },
 
-    edit(content) {
-      if (!pageId || content === current) return;
+    edit(content, runs) {
+      if (!pageId) return;
+      const next = runs ?? NO_RUNS;
+      const key = runsKey(next);
+      if (content === current && key === currentKey) return;
       current = content;
+      currentRuns = next;
+      currentKey = key;
       clearTimers();
 
-      if (content === stored) {
+      if (!dirty()) {
         // Se deshizo hasta lo que Notion ya tiene: no hay nada que guardar.
         announce("clean");
         void dropDraft(pageId);
@@ -172,7 +225,8 @@ export function makeSaver(onChange: (state: SaveState, detail: string) => void):
 
     end() {
       clearTimers();
-      if (pageId && current !== stored) {
+      if (pageId && dirty()) {
+
         // El aviso de salida se queda puesto hasta que la petición confirme: se
         // cierra el editor, no se abandona el texto.
         void toDraft();
