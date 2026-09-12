@@ -71,6 +71,14 @@ export interface Visual {
   insertAttachment(file: { name: string; kind: "image" | "video" | "audio" | "pdf" | "file"; url?: string | null; blockId?: string }): void;
   /** El id del bloque que está justo antes del cursor: el ancla de la subida. */
   blockBeforeCaret(): string | null;
+  /** Los bloques del documento, en orden. */
+  blocks(): readonly HTMLElement[];
+  /** El texto de un bloque, sin marcas de id ni mandos de la plataforma. */
+  plain(node: Element): string;
+  /** Pone bloques nuevos justo detrás de uno y deja el cursor dentro. */
+  insertAfterBlock(node: Element, markdown: string): void;
+  /** Lleva el cursor a un bloque. */
+  focusOn(node: Element): void;
   /** Archivos arrastrados sobre la hoja: la plataforma los cuelga. */
   onDropFiles(run: (files: readonly File[]) => void): void;
 }
@@ -273,8 +281,22 @@ export function mountVisual(): Visual {
 
   /* --- leer: nodos a Markdown ------------------------------------------- */
 
-  /** El texto plano de un nodo: lo que se escribió, sin marcas de id. */
+  /**
+   * El texto plano de un nodo: lo que se escribió, sin marcas de id y sin lo
+   * que la plataforma haya colgado dentro.
+   *
+   * Las preguntas de la ruta de Indagar llevan dentro de su bloque un mando
+   * —responder, que la IA lo intente— que es un nodo con `data-widget` y el
+   * `contenteditable` apagado. Eso no lo escribió nadie, así que no puede
+   * viajar a Notion: se quita sobre una copia, para no tocar lo que se está
+   * viendo. Sin esto, la palabra «Responder» acabaría dentro de la cita.
+   */
   function plainOf(node: Node): string {
+    if (node instanceof Element && node.querySelector("[data-widget]")) {
+      const copy = node.cloneNode(true) as Element;
+      for (const one of [...copy.querySelectorAll("[data-widget]")]) one.remove();
+      return (copy.textContent ?? "").replace(MARK, "");
+    }
     return (node.textContent ?? "").replace(MARK, "");
   }
 
@@ -334,7 +356,7 @@ export function mountVisual(): Visual {
       const grouped = node.tagName === "UL" || node.tagName === "OL";
       const wasGroup = prevGroup;
       prevGroup = grouped;
-      if (!node.textContent?.trim() && node.tagName === "P") continue;
+      if (!plainOf(node).trim() && node.tagName === "P") continue;
       parts.push(grouped && wasGroup ? "" : "", lineOf(node));
     }
 
@@ -351,6 +373,11 @@ export function mountVisual(): Visual {
    */
   function tidy(): void {
     for (const node of [...root.children]) {
+      // Un mando que se quedó solo en la raíz no es texto de nadie: lo suelta
+      // el navegador al borrar la cita que lo llevaba dentro, y volverlo
+      // párrafo metería «Responder» en el documento. Se va, y la ruta lo
+      // repone en su sitio en el siguiente repintado.
+      if (node.hasAttribute("data-widget")) { node.remove(); continue; }
       if (node.tagName === "DIV" || node.tagName === "SPAN" || node.tagName === "BR") {
         const para = el("p", { class: "vis__b vis__b--p" });
         para.setAttribute("data-b", node.getAttribute?.("data-b") ?? "");
@@ -582,6 +609,27 @@ export function mountVisual(): Visual {
     },
     insertAttachment,
     blockBeforeCaret,
+    blocks() {
+      return [...root.children].filter((one): one is HTMLElement => one instanceof HTMLElement);
+    },
+    plain(node) {
+      return plainOf(node);
+    },
+    insertAfterBlock(node, markdown) {
+      // Sin Markdown que poner, se abre un párrafo vacío: es lo que pide el
+      // mando de «responder aquí», que no trae texto sino sitio donde ponerlo.
+      const fresh = markdown.trim()
+        ? nodesOf(markdown)
+        : [el("p", { class: "vis__b vis__b--p" })];
+      if (fresh.length === 0) return;
+      node.after(...fresh);
+      const last = fresh[fresh.length - 1];
+      if (last) place(last);
+      edited();
+    },
+    focusOn(node) {
+      if (node instanceof HTMLElement) place(node);
+    },
     selected() {
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed) return "";

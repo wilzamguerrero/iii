@@ -88,8 +88,23 @@ export const ACTIONS: readonly FragmentAction[] = [
 export function menuItems(fragment: string, pageName: string): MenuItem[] {
   return ACTIONS.map((action) => ({
     label: action.label,
-    run: () => { ask(action.order, fragment, pageName); },
+    run: () => { askFragment(action, fragment, pageName); },
   }));
+}
+
+/**
+ * Pedirle una acción a un fragmento.
+ *
+ * Lo usan los dos gestos que existen sobre lo marcado —el clic derecho y los
+ * iconos que salen al seleccionar— y por eso está aquí: la orden que se le
+ * manda al modelo tiene que ser la misma se pida por donde se pida.
+ */
+export function askFragment(
+  action: FragmentAction,
+  fragment: string,
+  pageName: string,
+): void {
+  ask(action.order, fragment, pageName);
 }
 
 function ask(order: string, fragment: string, pageName: string): void {

@@ -1,14 +1,14 @@
 # El humo
 
-Siete guiones que abren la plataforma de verdad en un Chrome sin ventana, la
+Ocho guiones que abren la plataforma de verdad en un Chrome sin ventana, la
 manejan como la manejaría una persona y comprueban lo que queda en la pantalla.
-**180 comprobaciones.**
+**252 comprobaciones.**
 
 ```
 npm run smoke
 ```
 
-Arranca lo que falte (el servidor de desarrollo y el Chrome), corre las siete
+Arranca lo que falte (el servidor de desarrollo y el Chrome), corre las ocho
 partes en orden, y al final dice cuántas comprobaciones pasaron. Si ya tienes
 `npm run dev` a mano, se cuelga de él y no lo apaga; lo que arranca, lo apaga.
 Con un solo fallo sale con código 1, así que vale para un gancho de git.
@@ -31,7 +31,7 @@ no una imitación de uno.
 | `run.mjs` | Levanta el servidor y el Chrome, corre las partes, cuenta. |
 | `part.mjs` | Lo que toda parte necesita: abrir la página, anotar, informar al salir. |
 | `cdp.mjs` | El cliente del protocolo de depuración. |
-| `parts/` | Las siete partes, una por lo que hace la plataforma. |
+| `parts/` | Las ocho partes, una por lo que hace la plataforma. |
 | `doubles/` | Lo de fuera, fingido. |
 
 Cada parte recarga la página al empezar y cada doble pone —o borra— lo que su
@@ -39,16 +39,17 @@ premisa necesita del `localStorage`. El Chrome que arranca `run.mjs` usa un
 perfil nuevo, así que el tema, la intención o dónde se dejó el asistente no
 pasan de una corrida a otra.
 
-## Las siete partes
+## Las ocho partes
 
 1. **Entrada** — el documento se monta cerrado, se abre al elegir una página,
    trae el texto de Notion, cuenta palabras, saca los apartados y se guarda solo.
 2. **Lectura** — la hoja es el documento mismo, sin dos modos; los apartados
    llevan hasta su sitio, las tres estructuras del reglamento se insertan una
    sola vez, la tecla «/» abre el menú de bloques y elegir uno lo pone,
-   lo marcado ofrece Cuestionar / Explicar / Precisar, el clic derecho abre
-   el menú de la IA con las acciones de investigación, y una imagen en la
-   hoja se ve mientras se escribe.
+   marcar un fragmento levanta los seis iconos de la barra —Cuestionar /
+   Explicar / Precisar y Resumir / Buscar respaldo / Parafrasear—, cada uno con
+   su nombre en el `title`, el clic derecho abre el mismo menú de la IA, y una
+   imagen en la hoja se ve mientras se escribe.
 3. **Revisión** — la columna de la derecha: sin credencial lo dice y no gasta una
    petición; con ella marca faltas, respaldos y flojos sobre el texto.
 4. **Arranque** — de la intención al proyecto: la IA propone nombre y preguntas,
@@ -68,6 +69,20 @@ pasan de una corrida a otra.
 7. **Dictado** — el mismo botón en los tres sitios donde se escribe; lo
    provisional no se escribe, lo terminado cae en el cursor con su espacio, la
    pausa no lo apaga, el bucle tiene tope, y sin permiso se apaga diciendo por qué.
+8. **Indagar** — la ruta dentro del documento: once preguntas repartidas por sus
+   cuatro pasos, la columna que se abre sola en cuanto hay un paso empezado y
+   dice en cuál se está, la pregunta que se responde **ahí mismo** —saltar hasta
+   ella ya abre el hueco con el cursor dentro, y el otro mando pide un borrador
+   a la IA— y el mapa de la ruta: catorce nodos, los cuatro pasos comunes, las
+   siete naturalezas en abanico con sus hilos de puntos. **Mirar una naturaleza
+   no escribe nada** —eso se comprueba comparando el documento entero antes y
+   después de mirarla—, tomarla declara la naturaleza y trae sus cinco pasos,
+   las herramientas y la salida común sin regalar avance, escribir dentro de uno
+   de esos pasos mueve la cuenta del mapa que está abierto al lado, y
+   **cambiarla después no borra lo escrito**: el apartado con trabajo dentro se
+   queda entero, los que sólo tenían su pregunta se van, y lo respondido sigue
+   respondido. El Escape cierra primero el mapa, la columna después, y el
+   documento nunca.
 
 ## Lo que se finge
 
@@ -78,6 +93,14 @@ Sólo lo que está fuera de la plataforma, y por una razón cada uno:
   ancla, deletes— igual que haría Notion y devuelve los bloques con
   `plain_text`, como los devuelve la API de verdad. Guardar contra Notion real
   en cada corrida ensuciaría un espacio real.
+- **Un documento con ruta** (`doubles/route.js`) — el mismo `fetch` falso, pero
+  sirviendo la ruta de Indagar. Este doble **no lleva el texto escrito a mano**:
+  se lo pide a `indagar.ts` y lo convierte con `blocks.ts` dentro de la página,
+  que es lo que impide que se quede viejo cuando cambie una pregunta. Lo único
+  escrito a mano son tres respuestas, puestas para que el documento quede justo
+  en el punto donde la ruta se bifurca. Cuando está, `notion.js` cambia su
+  documento por éste; cuando no, sirve el de siempre y las otras siete partes no
+  se enteran.
 - **El modelo** (`arranque.js`, `asistente.js`, `revision.js`) — un `/api/ai-chat`
   que devuelve un SSE en trozos, como el de verdad. Se prueba nuestro lado: qué
   se le manda, qué se hace con lo que contesta. Un modelo real daría una

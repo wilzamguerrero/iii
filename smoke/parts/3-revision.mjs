@@ -101,7 +101,7 @@ const esc = () => cdp.evaluate(`(() => {
   document.querySelector(".wr").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   const wr = document.querySelector(".wr");
   return {
-    tools: !document.querySelector(".wr__tools").hidden,
+    tools: !document.querySelector(".marca").hidden,
     pick: !document.querySelector(".pick").hidden,
     rev: !document.querySelector(".rev").hidden,
     wr: wr ? !wr.hidden : false,

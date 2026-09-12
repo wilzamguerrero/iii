@@ -3,7 +3,7 @@ import { icon } from "../icons.ts";
 import { askAssistant } from "../assistant/assistant.ts";
 import { setAddTarget } from "../assistant/answer.ts";
 import { openMenu } from "../dock/menu.ts";
-import { menuItems } from "./contextai.ts";
+import { askFragment, menuItems } from "./contextai.ts";
 import { mountVisual, type Visual } from "./visual.ts";
 import { mountSlash, type Slash } from "./slash.ts";
 import { mountUploadPanel, type UploadPanel } from "./upload.ts";
@@ -19,6 +19,14 @@ import { mountOutline, type Outline } from "./outline.ts";
 import { mountStructures, type Structures } from "./structure.ts";
 import { mountPanel, type Panel } from "./panel.ts";
 import { mountMic, type Mic } from "../voice/mic.ts";
+import { mountAsks, type Asks } from "./asks.ts";
+import { mountGuide, type Guide } from "./guide.ts";
+import { mountMap, type RouteMap } from "./map.ts";
+import { mountTools, type Tools } from "./tools.ts";
+import { closeProposal, proposalOpen } from "./propose.ts";
+import { readRoute, withNature, type Route } from "../../core/method/route.ts";
+import { intent } from "../../core/state/intent.ts";
+import type { NatureId } from "../../core/method/indagar.ts";
 /**
  * El documento: se escribe y se lee a la vez.
  *
@@ -49,12 +57,15 @@ let where: HTMLElement | null = null;
 let stateLine: HTMLElement | null = null;
 let countLine: HTMLElement | null = null;
 let visual: Visual | null = null;
-let tools: HTMLElement | null = null;
+let tools: Tools | null = null;
 let notice: HTMLElement | null = null;
 
 let outline: Outline | null = null;
 let structures: Structures | null = null;
 let panel: Panel | null = null;
+let asks: Asks | null = null;
+let guide: Guide | null = null;
+let routeMap: RouteMap | null = null;
 let mic: Mic | null = null;
 let slash: Slash | null = null;
 let upload: UploadPanel | null = null;
@@ -121,89 +132,59 @@ function changed(): void {
   outline?.set(now);
   paintCount(now);
   saver.edit(now);
+  // La ruta se relee del texto y los mandos se recuelgan donde toca. Los tres
+  // son baratos y tienen que ser exactos: si se escribe la respuesta de una
+  // pregunta, el icono cambia en ese mismo instante, y el mapa —que se puede
+  // dejar abierto al lado mientras se escribe— cuenta el avance de ahora.
+  asks?.paint();
+  guide?.paint();
+  routeMap?.repaint();
+}
+
+/* --- la ruta de Indagar ---------------------------------------------------- */
+
+/** Lo último que se leyó y de qué texto: releer once pasos por tecla sobra. */
+let routeText: string | null = null;
+let routeSeen: Route | null = null;
+
+/**
+ * La ruta tal como está el documento ahora.
+ *
+ * No hay progreso guardado en ninguna parte: esto lee el texto cada vez que el
+ * texto cambia, y lo recuerda mientras no cambie. Así lo que la plataforma cree
+ * y lo que se ve escrito no pueden separarse, ni siquiera si alguien edita el
+ * documento en Notion desde el teléfono.
+ */
+function routeNow(): Route {
+  const now = text();
+  if (routeText !== now || !routeSeen) {
+    routeText = now;
+    routeSeen = readRoute(now);
+  }
+  return routeSeen;
+}
+
+/**
+ * Tomar una ruta: la naturaleza entra escrita en el documento.
+ *
+ * Se reescribe el documento entero porque cambiar de naturaleza mueve
+ * apartados de sitio, y `withNature` es quien sabe hacerlo sin perder lo
+ * escrito: los apartados de la ruta que se toma vuelven con su contenido y sus
+ * marcas de bloque, y los de la anterior se quedan si tienen algo dentro.
+ */
+function takeNature(id: NatureId): void {
+  if (!visual) return;
+  const before = text();
+  const after = withNature(before, id);
+  if (after === before) return;
+  visual.set(after);
+  changed();
 }
 
 /* --- lo seleccionado ------------------------------------------------------- */
 
 function selected(): string {
   return visual?.selected() ?? "";
-}
-
-/**
- * El fragmento con el que ya se hizo algo.
- *
- * Retirar la barra no basta: pedir una de las acciones lleva el foco a la
- * ventana del asistente, y mover el foco avisa de que la selección cambió. Ese
- * aviso volvía a mirar lo marcado —que sigue marcado, porque el texto no se
- * toca— y devolvía la barra a la pantalla un instante después de haberla
- * quitado. Así que se recuerda para qué se quitó: mientras siga marcado eso
- * mismo, la barra no vuelve; en cuanto se marque otra cosa, sí.
- */
-let usedOn = "";
-
-function hideTools(): void {
-  if (!tools) return;
-  tools.hidden = true;
-  usedOn = selected();
-}
-
-function watchSelection(): void {
-  if (!tools) return;
-  const now = selected();
-  if (now && now === usedOn) {
-    tools.hidden = true;
-    return;
-  }
-  usedOn = "";
-  tools.hidden = now.length < MIN_SELECTION;
-}
-
-/**
- * Las tres cosas que se pueden pedir sobre un fragmento.
- *
- * Ninguna de las tres pide texto de reemplazo, y no es una limitación técnica: es la
- * diferencia entre esto y una plataforma que escribe el párrafo por ti. Cuestionar
- * saca a la luz lo que se dio por supuesto; explicar dice qué papel cumple ese trozo
- * en la fase; precisar señala dónde se puede leer de dos maneras. Las tres contestan
- * en la ventana del asistente, que ya está abierta y se puede mover para no tapar el
- * texto del que se habla.
- *
- * El menú del clic derecho (`contextai.ts`) tiene la versión completa, con las
- * acciones de investigación además de éstas; la barra muestra las tres
- * primeras, que son las del método, porque son las que se piden sobre la
- * marcha mientras se escribe.
- */
-const ACTS: readonly { id: string; label: string; title: string; order: string }[] = [
-  {
-    id: "cuestionar",
-    label: "Cuestionar",
-    title: "Qué doy por supuesto en este fragmento",
-    order: "Cuestiona este fragmento de mi documento: qué doy por supuesto, qué no queda " +
-      "dicho y qué tendría que decidir. No lo reescribas.",
-  },
-  {
-    id: "explicar",
-    label: "Explicar",
-    title: "Qué papel cumple este fragmento en la fase",
-    order: "Explícame qué papel cumple este fragmento dentro de la fase en la que estoy y " +
-      "qué le falta para cumplirlo. No lo reescribas.",
-  },
-  {
-    id: "precisar",
-    label: "Precisar",
-    title: "Dónde se puede leer de dos maneras",
-    order: "Dime dónde este fragmento se puede leer de dos maneras y qué decisiones me " +
-      "faltan para que sólo se lea de una. No lo reescribas: no me devuelvas el párrafo " +
-      "corregido.",
-  },
-];
-
-function act(order: string): void {
-  const fragment = selected();
-  if (!fragment) return;
-  const name = page?.name ?? "el documento";
-  askAssistant(`${order}\n\nDocumento «${name}». Fragmento:\n«${fragment}»`);
-  hideTools();
 }
 
 /* --- insertar una estructura ---------------------------------------------- */
@@ -308,6 +289,8 @@ function buildBar(): HTMLElement {
     close, where, stateLine, countLine,
     el("div", { class: "wr__acts" }, [
       attach,
+      guide?.button ?? el("span"),
+      routeMap?.button ?? el("span"),
       structures?.button ?? el("span"),
       panel?.button ?? el("span"),
       ...(mic ? [mic.button] : []),
@@ -317,23 +300,7 @@ function buildBar(): HTMLElement {
 }
 
 function buildPaper(): HTMLElement {
-  tools = el("div", {
-    class: "wr__tools",
-    attrs: { hidden: true, role: "group", "aria-label": "Sobre lo seleccionado" },
-  }, [
-    el("span", { class: "wr__tools__say", text: "Con lo que has marcado:" }),
-    ...ACTS.map((one) => el("button", {
-      class: "wr__tool",
-      text: one.label,
-      attrs: { type: "button", title: one.title, "data-id": one.id },
-      on: { click: () => { act(one.order); } },
-    })),
-  ]);
-
-  return el("div", { class: "wr__paper" }, [
-    visual?.root ?? el("span"),
-    tools,
-  ]);
+  return el("div", { class: "wr__paper" }, [visual?.root ?? el("span")]);
 }
 
 function build(): void {
@@ -367,9 +334,18 @@ function build(): void {
 
   // La barra de selección y el clic derecho: ambos miran lo marcado en el
   // documento compuesto, que ahora es el mismo que el editable.
-  visual.root.addEventListener("select", watchSelection);
-  visual.root.addEventListener("keyup", watchSelection);
-  visual.root.addEventListener("pointerup", watchSelection);
+  // Los iconos sobre lo marcado, colgados del renglón donde está la selección.
+  tools = mountTools({
+    root: () => visual?.root ?? null,
+    selected,
+    onAct: (action, fragment) => {
+      askFragment(action, fragment, page?.name ?? "el documento");
+    },
+  });
+  const watching = (): void => { tools?.watch(); };
+  visual.root.addEventListener("select", watching);
+  visual.root.addEventListener("keyup", watching);
+  visual.root.addEventListener("pointerup", watching);
   visual.root.addEventListener("contextmenu", (event) => {
     const fragment = selected();
     if (!fragment || fragment.length < MIN_SELECTION) return;
@@ -388,6 +364,35 @@ function build(): void {
     now: documentNow,
     onLocate: (fragment) => { visual?.locate(fragment); },
     onAsk: askAssistant,
+  });
+
+  // La ruta de Indagar, en sus tres caras: dentro del documento (los mandos de
+  // cada pregunta), al lado (qué toca ahora) y en el mapa (por dónde va y a
+  // dónde podría ir). Las tres leen la misma ruta del mismo texto.
+  routeMap = mountMap({
+    route: routeNow,
+    content: text,
+    intent: () => intent.get()?.text ?? null,
+    onTake: takeNature,
+    onGo: (step) => { asks?.goToStep(step); },
+    onAsk: askAssistant,
+  });
+  asks = mountAsks({
+    visual,
+    route: routeNow,
+    content: text,
+    intent: () => intent.get()?.text ?? null,
+    changed,
+    onMap: () => { routeMap?.open(); },
+    onAsk: askAssistant,
+  });
+  guide = mountGuide({
+    route: routeNow,
+    onAskFor: (stepId) => { asks?.askFor(stepId); },
+    onGoTo: (ask) => { asks?.goTo(ask); },
+    onGoStep: (step) => { asks?.goToStep(step); },
+    onMap: () => { routeMap?.open(); },
+    onCloseOut: () => { asks?.closeOut(); },
   });
 
   // Dictar escribe en el documento: el botón de siempre, hablándole al editor.
@@ -423,8 +428,11 @@ function build(): void {
         // Lo de encima primero: la barra de selección, luego las columnas, y sólo
         // al final el documento. Cerrarlo de golpe con algo abierto sorprende.
         event.stopPropagation();
-        if (tools && !tools.hidden) { hideTools(); return; }
+        if (proposalOpen()) { closeProposal(); return; }
+        if (routeMap && !routeMap.root.hidden) { routeMap.close(); return; }
+        if (tools?.visible()) { tools.hide(); return; }
         if (structures && !structures.root.hidden) { structures.close(); return; }
+        if (guide && !guide.root.hidden) { guide.close(); return; }
         if (panel && !panel.root.hidden) { panel.close(); return; }
         shut();
       },
@@ -433,8 +441,10 @@ function build(): void {
     bar, notice,
     upload?.root ?? el("span"),
     el("div", { class: "wr__body" }, [
-      outline.root, buildPaper(), panel.root,
+      outline.root, buildPaper(), guide.root, panel.root,
     ]),
+    routeMap.root,
+    tools.root,
     picker ?? el("span"),
   ]);
 
@@ -550,6 +560,9 @@ async function load(target: SelectedPage): Promise<void> {
   visual.set(content, clipUrls);
   saver.begin(target.id, name, content);
   changed();
+  // La columna se abre sola cuando el documento lleva la ruta escrita: es el
+  // documento de Indagar, y lo primero que hace falta saber es en qué paso va.
+  if (routeNow().steps.some((one) => one.present)) guide?.open();
   visual.focusStart();
 
   if (draft && draft.content.trim() && draft.content !== content) recover(draft, content);
@@ -572,6 +585,7 @@ function show(target: SelectedPage): void {
     return;
   }
   structures?.close();
+  routeMap?.close();
   panel?.close();
   panel?.reset();
   void load(target);
@@ -585,8 +599,16 @@ function shut(): void {
   if (!root || root.hidden) return;
   mic?.stop();
   structures?.close();
+  routeMap?.close();
+  guide?.close();
   panel?.close();
-  hideTools();
+  tools?.hide();
+  closeProposal(false);
+  // Los mandos son de este documento: dejarlos puestos los colgaría del texto
+  // del siguiente, que no tiene por qué llevar la misma ruta.
+  asks?.clear();
+  routeText = null;
+  routeSeen = null;
   saver.end();
   // El estado de bloques confirmados de esta página ya no hace falta: si se
   // vuelve a abrir, se lee otra vez. Sin esto, una sesión larga escribiría

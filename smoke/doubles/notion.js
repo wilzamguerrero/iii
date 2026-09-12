@@ -50,6 +50,25 @@
     mkBlock("b9", "bulleted_list_item", "Con dos cosas"),
   ];
 
+  /* Un documento de verdad para el que lo pida: `route.js` deja puesta
+     `window.__routeBlocks()`, que arma la ruta de Indagar con sus preguntas y
+     sus respuestas dentro. Sin eso, el documento de arriba.
+
+     Se mira en la primera lectura y no aqui arriba a proposito: los dobles se
+     instalan en el orden en que se piden, y `route.js` puede venir despues, asi
+     que preguntar por el ahora mismo seria preguntar antes de que exista. El
+     editor no pide bloques hasta que la plataforma arranca, y para entonces
+     `route.js` ya corrio. */
+  let ready = null;
+  function routeUp() {
+    if (ready) return ready;
+    ready = Promise.resolve()
+      .then(() => (typeof window.__routeBlocks === "function" ? window.__routeBlocks() : null))
+      .then((made) => { if (made) blocks.splice(0, blocks.length, ...made); })
+      .catch((e) => { window.__routeError = String(e); });
+    return ready;
+  }
+
   function mkBlock(id, type, text, level) {
     const out = { id, object: "block", type, has_children: false };
     out[type] = { rich_text: [{ plain_text: text }] };
@@ -83,6 +102,7 @@
       // Los bloques de la pagina, paginados como Notion.
       if (method === "GET" && path.indexOf("/children") > 0) {
         const id = path.slice(8).replace("/children", "");
+        await routeUp();
         let all = blocks;
         if (id !== "page-1") all = [];
         window.__blockReads += 1;

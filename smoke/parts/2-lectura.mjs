@@ -119,7 +119,7 @@ const heading = await cdp.evaluate(`(() => ({
 say(heading.heads.includes("Un apartado nuevo con el menu"), "el titulo del menu sale en los apartados");
 say(heading.state === "Sin guardar", "y queda como cambio sin guardar");
 
-/* --- las tres acciones sobre lo marcado -------------------------------- */
+/* --- las seis acciones sobre lo marcado --------------------------------- */
 const tools = await cdp.evaluate(`(() => {
   const vis = document.querySelector(".vis");
   const para = [...vis.querySelectorAll("p")].find((p) => p.textContent.indexOf("El programa de Diseno") === 0);
@@ -129,12 +129,21 @@ const tools = await cdp.evaluate(`(() => {
   sel.removeAllRanges();
   sel.addRange(range);
   vis.dispatchEvent(new Event("select", { bubbles: true }));
-  const bar = document.querySelector(".wr__tools");
-  return { shown: !bar.hidden, labels: [...bar.querySelectorAll(".wr__tool")].map((b) => b.textContent) };
+  const bar = document.querySelector(".marca");
+  return {
+    shown: !bar.hidden,
+    labels: [...bar.querySelectorAll(".marca__b")].map((b) => b.textContent),
+    icons: [...bar.querySelectorAll(".marca__b .ico")].length,
+    titled: [...bar.querySelectorAll(".marca__b")].every((b) => b.title.length > 0),
+  };
 })()`);
-say(tools.shown === true, "marcar texto ofrece las tres acciones", JSON.stringify(tools.labels));
+say(tools.shown === true, "marcar texto ofrece las acciones", JSON.stringify(tools.labels));
+say(tools.labels.length === 6 && tools.labels.includes("Cuestionar") && tools.labels.includes("Parafrasear"),
+  "con las del metodo y las de investigacion", JSON.stringify(tools.labels));
+say(tools.icons === 6, "cada una con su icono", "iconos=" + tools.icons);
+say(tools.titled === true, "y su nombre completo en el title");
 
-await cdp.evaluate(`[...document.querySelectorAll(".wr__tool")].find((b) => b.textContent === "Cuestionar").click()`);
+await cdp.evaluate(`[...document.querySelectorAll(".marca__b")].find((b) => b.textContent === "Cuestionar").click()`);
 await wait(500);
 const asked = await cdp.evaluate(`(() => {
   const pop = document.querySelector(".ai-pop");
@@ -142,7 +151,7 @@ const asked = await cdp.evaluate(`(() => {
   return {
     open: pop ? !pop.hidden : false,
     mine: turns.find((t) => t.indexOf("Cuestiona este fragmento") === 0) || null,
-    toolsHidden: document.querySelector(".wr__tools").hidden,
+    toolsHidden: document.querySelector(".marca").hidden,
   };
 })()`);
 say(asked.open === true, "la pregunta va a la ventana del asistente");

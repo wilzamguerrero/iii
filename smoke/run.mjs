@@ -1,5 +1,5 @@
 /**
- * El humo: arranca lo que haga falta, corre las siete partes en orden y dice
+ * El humo: arranca lo que haga falta, corre las ocho partes en orden y dice
  * cuántas comprobaciones pasaron.
  *
  * No hay marco de pruebas y no se va a añadir uno: cada parte abre la
@@ -31,8 +31,9 @@ const CDP_PORT = Number(process.env.CDP_PORT ?? 9222);
 const BASE = process.env.BASE ?? `http://localhost:${PORT}`;
 
 /* En orden: la entrada, la hoja, la revisión, el arranque de un proyecto, la
-   franja, el asistente y el dictado. Cada una deja la página como la encuentra
-   —recarga al empezar—, así que el orden es para leerlo, no una dependencia. */
+   franja, el asistente, el dictado y la ruta de Indagar. Cada una deja la
+   página como la encuentra —recarga al empezar—, así que el orden es para
+   leerlo, no una dependencia. */
 const PARTS = [
   "1-entrada.mjs",
   "2-lectura.mjs",
@@ -41,6 +42,7 @@ const PARTS = [
   "5-franja.mjs",
   "6-asistente.mjs",
   "7-dictado.mjs",
+  "8-indagar.mjs",
 ];
 
 const CHROMES = [

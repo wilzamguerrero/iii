@@ -18,6 +18,8 @@
  * lo contrario: el mismo formulario para todos, que es lo que el método niega.
  */
 
+import { indagarDocument } from "./indagar.ts";
+
 export type PhaseId = "indagar" | "idear" | "implementar";
 
 export interface Phase {
@@ -96,12 +98,19 @@ function section(title: string): string {
  * Lleva la intención copiada arriba —el documento tiene que poder leerse solo,
  * fuera de la plataforma— y las preguntas que el asistente hizo para *este*
  * proyecto. Si no hubo asistente configurado no se inventan: se dice que faltan.
+ *
+ * Indagar es la excepción, y no por capricho: su secuencia está escrita —cuatro
+ * pasos comunes, siete naturalezas, una salida— y vive en `indagar.ts`. Su
+ * documento no nace con apartados en blanco sino con la ruta y sus preguntas
+ * dentro, para que indagar sea responder donde toca y no rellenar un molde.
  */
 export function phaseDocument(
   id: PhaseId,
   intent: string,
   questions: readonly string[] = [],
 ): string {
+  if (id === "indagar") return indagarDocument(intent, questions);
+
   const phase = phaseOf(id);
   const parts: string[] = [
     `# ${phase.name}`,

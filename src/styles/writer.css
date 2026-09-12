@@ -459,59 +459,6 @@ body.is-writing { overflow: hidden; }
   100% { background: transparent; box-shadow: 0 0 0 6px transparent; }
 }
 
-/* --- las tres acciones sobre lo marcado ---------------------------------- */
-
-/* Al pie de la hoja y no flotando junto al cursor: dentro de un `<textarea>`
-   no hay manera de saber dónde cae la selección en pantalla sin duplicar el
-   campo entero en un espejo invisible, y una barra que aparece casi donde
-   toca es peor que una que aparece siempre en el mismo sitio. */
-.wr__tools {
-  position: absolute;
-  left: 50%;
-  bottom: 1.1rem;
-  z-index: 1;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  max-width: calc(100% - 2rem);
-  padding: 0.3rem 0.35rem;
-  border: 1px solid var(--ink-line);
-  border-radius: var(--r-panel);
-  background: var(--paper);
-  box-shadow: var(--shadow);
-  animation: tools-in 0.22s var(--out-quart) both;
-}
-
-.wr__tools[hidden] { display: none !important; }
-
-@keyframes tools-in {
-  from { opacity: 0; transform: translate(-50%, 6px); }
-  to { opacity: 1; transform: translate(-50%, 0); }
-}
-
-.wr__tools__say {
-  padding: 0 0.35rem 0 0.25rem;
-  font-size: 0.74rem;
-  color: var(--ink-faint);
-  white-space: nowrap;
-}
-
-.wr__tool {
-  padding: 0.3rem 0.55rem;
-  border: 0;
-  border-radius: var(--r-panel);
-  background: transparent;
-  color: var(--ink);
-  font-family: inherit;
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition: background-color 0.2s ease;
-}
-
-.wr__tool:hover { background: var(--wash); }
-.wr__tool:focus-visible { outline: 1px solid var(--ink); outline-offset: 1px; }
-
 /* --- los apartados ------------------------------------------------------- */
 
 /* El espacio para leer la estructura del documento: los títulos que hay, en el
@@ -817,16 +764,13 @@ body.is-writing { overflow: hidden; }
   .wr__count { display: none; }
   .vis,
   .doc { padding: 1.6rem 1.1rem 5rem; }
-  .wr__tools__say { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .wr__tools { animation: none; }
   .doc .is-found { animation: none; background: var(--tint); }
   .vis .is-found { animation: none; background: var(--tint); }
   .sl { animation: none; }
   .wr__act,
-  .wr__tool,
   .wr__x,
   .out__h,
   .rev__one { transition: none; }
