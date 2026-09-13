@@ -31,6 +31,12 @@
      viaja allí como color de texto nativo—, así que aquí se declara el mismo
      para que el documento se lea igual en los dos sitios. */
   --ai: #337ea9;
+  /* El resaltado de marcar texto. Sólo hace falta porque el texto de la IA
+     retoca su `::selection` para conservar su color, y en cuanto una regla
+     toca `::selection` el navegador deja de poner el suyo: el fondo pasa a
+     ser transparente y marcar no se ve. Declarado aquí, el papel y la IA se
+     resaltan igual y una marca que cruce de uno a otro es una sola banda. */
+  --mark: rgba(51, 126, 169, 0.28);
 
   /* Un panel suelto sobre la página: la franja, la ventana del asistente y las
      ventanitas de la bandeja son el mismo objeto y se declaran una vez. */
@@ -75,6 +81,8 @@
   --veil: rgba(0, 0, 0, 0.55);
   --bad: #e79379;
   --ai: #529cca;
+  /* Sobre papel oscuro el mismo alfa se apaga: sube, o marcar no se distingue. */
+  --mark: rgba(82, 156, 202, 0.38);
 
   --shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
   --shadow-lift: 0 3px 12px rgba(0, 0, 0, 0.5);

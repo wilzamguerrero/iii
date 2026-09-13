@@ -739,6 +739,113 @@ say(asoma.ancho > 40 && asoma.alto > 40,
 await cdp.send("Emulation.clearDeviceMetricsOverride");
 await wait(200);
 
+/* --- lo que escribio la IA se puede marcar, y se ve marcado ----------------
+
+   El color de autoria retoca su `::selection` para que al marcar mande la
+   seleccion y no la autoria. El detalle que costo: en cuanto una regla propia
+   toca `::selection`, el navegador deja de poner el resaltado suyo, y aquella
+   regla solo decia `color`. El fondo quedaba transparente, asi que el texto de
+   la IA se marcaba de verdad —la seleccion existia, se copiaba, se borraba—
+   pero no se veia marcado. Desde fuera eso se lee como «no me deja
+   seleccionarlo», que fue como se conto.
+
+   Se comprueba lo que se paga por ese fallo, no la regla: que el fondo no sea
+   transparente, que sea el mismo que el del texto normal —una marca que cruce
+   de una letra a otra tiene que ser una sola banda— y que arrastrando el raton
+   de verdad por encima se marque y se borre de una tecla. */
+
+/* El mapa sigue abierto de las comprobaciones de arriba, y es una capa fija
+   sobre toda la pantalla: sin cerrarlo, el raton pulsaria sobre el mapa y no
+   sobre el documento. */
+await cdp.evaluate(`(() => {
+  document.querySelector("#wr-map .map__stage").dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+})()`);
+await wait(400);
+
+const tinta = await cdp.evaluate(`(() => {
+  const vis = document.querySelector(".vis");
+  const largos = [...vis.children]
+    .filter((n) => n.tagName === "P" && (n.textContent || "").trim().length > 40);
+  const vecino = largos[largos.length - 1];
+  return import("/src/ui/writer/authored.ts").then((a) => {
+    const p = document.createElement("p");
+    p.className = "vis__b vis__b--p";
+    p.setAttribute("data-b", "marca");
+    p.textContent = "Se espera comprender la existencia a partir de la pregunta por la vida y la muerte, para responder el sentido de la propia existencia.";
+    vecino.after(p);
+    a.markAi([p]);
+    window.__vecino = vecino;
+    const span = p.querySelector("[data-ai]");
+    const mira = (el) => {
+      const s = getComputedStyle(el, "::selection");
+      return { fondo: s.backgroundColor, letra: s.color };
+    };
+    return { hay: !!span, ia: mira(span), normal: mira(vecino) };
+  });
+})()`);
+
+const claro = (c) => c === "rgba(0, 0, 0, 0)" || c === "transparent";
+say(tinta.hay, "el parrafo de la IA queda marcado como suyo");
+say(!claro(tinta.ia.fondo),
+  "el resaltado de lo que escribio la IA se pinta: sin fondo, marcarlo no se veria",
+  "fondo=" + tinta.ia.fondo);
+say(tinta.ia.fondo === tinta.normal.fondo,
+  "y es el mismo del texto normal: una marca que cruce de uno a otro es una sola banda",
+  "ia=" + tinta.ia.fondo + " normal=" + tinta.normal.fondo);
+say(tinta.ia.letra !== tinta.normal.letra,
+  "dentro de la marca la letra de la IA sigue siendo suya, que es lo que la regla protege",
+  "ia=" + tinta.ia.letra + " normal=" + tinta.normal.letra);
+
+/* A la vista antes de tocarla: el rect va en coordenadas de ventana y el raton
+   no puede pulsar donde no se ve. */
+await cdp.evaluate(`(() => {
+  document.querySelector('.vis [data-ai]').scrollIntoView({ block: "center" });
+})()`);
+await wait(400);
+
+const sitio = await cdp.evaluate(`(() => {
+  const span = document.querySelector(".vis [data-ai]");
+  const r = span.getBoundingClientRect();
+  return { x1: r.left + 3, y1: r.top + r.height / 2, x2: r.right - 3 };
+})()`);
+
+const raton = (type, x, y) => cdp.send("Input.dispatchMouseEvent", {
+  type, x, y, button: "left", clickCount: 1,
+});
+
+await raton("mousePressed", sitio.x1, sitio.y1);
+await wait(60);
+await raton("mouseMoved", (sitio.x1 + sitio.x2) / 2, sitio.y1);
+await wait(60);
+await raton("mouseMoved", sitio.x2, sitio.y1);
+await wait(60);
+await raton("mouseReleased", sitio.x2, sitio.y1);
+await wait(150);
+
+const marcado = await cdp.evaluate(`(() => {
+  const s = window.getSelection();
+  return { largo: s.toString().length, colapsada: s.isCollapsed };
+})()`);
+say(!marcado.colapsada && marcado.largo > 40,
+  "arrastrando el raton por encima se marca, que es como se borra lo que sobra",
+  "letras=" + marcado.largo);
+
+const tecla = (type) => cdp.send("Input.dispatchKeyEvent", {
+  type, key: "Backspace", windowsVirtualKeyCode: 8, nativeVirtualKeyCode: 8,
+});
+await tecla("keyDown");
+await tecla("keyUp");
+await wait(220);
+
+const borrado = await cdp.evaluate(`(() => {
+  const p = document.querySelector('[data-b="marca"]');
+  return { largo: p ? (p.textContent || "").length : -1 };
+})()`);
+say(borrado.largo >= 0 && borrado.largo < 20,
+  "y una tecla se lleva lo marcado: el color de la IA no lo protege de borrarse",
+  "quedan " + borrado.largo + " letras");
+
 console.log("ruta de Indagar: " + JSON.stringify({ bloques: doc.made, nodos: map.nodes }));
 
 cdp.close();

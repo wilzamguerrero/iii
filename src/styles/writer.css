@@ -334,8 +334,20 @@ body.is-writing { overflow: hidden; }
 .vis__ai { color: var(--ai); }
 
 /* Al marcar texto manda la selección, no la autoría: si no, media frase
-   seleccionada se leería de dos colores. */
-.vis__ai::selection { color: inherit; }
+   seleccionada se leería de dos colores.
+
+   El fondo hay que declararlo aquí, y no es un adorno: el resaltado que pone
+   el navegador por su cuenta no es una regla que se pueda leer ni heredar, y
+   en cuanto una regla propia toca `::selection` deja de ponerse. Esta sólo
+   decía `color`, así que el fondo del texto de la IA quedaba transparente:
+   se marcaba de verdad —la selección existía, se copiaba y se borraba— pero
+   no se veía marcado, que desde fuera se lee como «no me deja
+   seleccionarlo». Se pinta el párrafo entero para que una marca que cruce de
+   la letra de la persona a la de la IA sea una sola banda. */
+.vis ::selection,
+.vis::selection { background: var(--mark); }
+
+.vis__ai::selection { background: var(--mark); color: inherit; }
 
 /* Un bloque vacío conserva su alto: si colapsara, el cursor tendría cero
    píxeles dónde estar y escribir sería a ciegas. */
