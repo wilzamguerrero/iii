@@ -1,5 +1,5 @@
 import { el, render } from "../dom.ts";
-import { markdownToLines, runKey, tmpId, type DocBlock, type DocRun, type DocRuns } from "../../core/notion/blocks.ts";
+import { markdownToLines, runKey, tmpId, MARK as BLOCK_MARK, type DocBlock, type DocRun, type DocRuns } from "../../core/notion/blocks.ts";
 import { caretIn, dressRuns, hasAi, markAi, putCaret, readRuns, settle } from "./authored.ts";
 import { inline, headingsOf, type Heading } from "./markdown.ts";
 
@@ -123,7 +123,7 @@ function kindOfTag(tag: string): VisualKind | null {
   }
 }
 
-const MARK = /<!--b:([A-Za-z0-9-]+)-->\s*$/;
+const MARK = BLOCK_MARK;
 
 /** Un documento sin autoría apuntada: lo normal al insertar algo nuevo. */
 const NO_RUNS: DocRuns = new Map();
@@ -392,6 +392,26 @@ export function mountVisual(): Visual {
    * están apuntando, y son esas posiciones las que dicen de quién es cada
    * línea mientras el bloque no tenga id de Notion.
    */
+  /**
+   * El bloque que todavia no tiene id se pone uno propio, y se lo queda.
+   *
+   * Antes el nodo nuevo viajaba sin marca: el lector de Markdown le inventaba
+   * un id temporal distinto en cada pulsacion y nadie podia reconocerlo cuando
+   * Notion devolvia el suyo. Escribiendolo aqui, en cuanto el bloque existe,
+   * cada nodo se llama igual desde que nace hasta que Notion lo bautiza, y el
+   * color de autoria deja de colgar del numero de linea —que cambia al escribir
+   * encima— para colgar del bloque, que es de quien es.
+   */
+  function stamp(node: Element): void {
+    const list = node.tagName === "UL" || node.tagName === "OL";
+    const kids = list ? [...node.children] : [node];
+    for (const one of kids) {
+      if (!one.getAttribute("data-b")) one.setAttribute("data-b", tmpId());
+    }
+    // La lista se llama como su primer punto, que es lo que espera `lineOf`.
+    if (list) node.setAttribute("data-b", kids[0]?.getAttribute("data-b") ?? "");
+  }
+
   function compose(): VisualDoc {
     const lines: string[] = [];
     const runs = new Map<string, readonly DocRun[]>();
@@ -410,6 +430,7 @@ export function mountVisual(): Visual {
 
     for (const node of [...root.children]) {
       if (!plainOf(node).trim() && node.tagName === "P") continue;
+      stamp(node);
       put("");
       // Cada punto de una lista es un bloque de Notion con su propia autoría:
       // la línea `i` de lo que escribe `lineOf` es el hijo `i`.
@@ -667,27 +688,20 @@ export function mountVisual(): Visual {
      * siempre, el bloque volvia a nacer temporal en el guardado siguiente y
      * Notion lo borraba y lo recreaba en cada pulsacion.
      *
-     * El emparejamiento es por el orden en que se pidieron los creates, que es
-     * el orden del documento: se recorren los nodos sin id y se les va dando
-     * el que les toca.
+     * El emparejamiento es **por id**, no por posicion: cada nodo lleva escrito
+     * el suyo desde que nace, asi que aqui basta con cambiar el viejo por el
+     * nuevo. Por posicion se descolocaba en cuanto un bloque cambiaba de sitio:
+     * los movidos tambien se crean —Notion no sabe mover— y, como esos ya
+     * tenian id, se los saltaba y corria la cuenta. El id de uno acababa puesto
+     * en otro; al guardar despues, el texto de un parrafo se escribia encima de
+     * otro y el que se habia quedado sin nombre se creaba de nuevo: duplicado.
      */
     born(idMap) {
       if (idMap.size === 0) return;
-      const real = [...idMap.values()];
-      let at = 0;
-      const give = (node: Element): void => {
-        if (at >= real.length) return;
-        if (node.getAttribute("data-b")) return;
-        const id = real[at];
-        if (id) { node.setAttribute("data-b", id); at += 1; }
-      };
-      for (const node of [...root.children]) {
-        if (!plainOf(node).trim() && node.tagName === "P") continue;
-        if (node.tagName === "UL" || node.tagName === "OL") {
-          for (const item of [...node.children]) give(item);
-          continue;
-        }
-        give(node);
+      for (const [was, now] of idMap) {
+        if (was === now) continue;
+        const node = root.querySelector(`[data-b="${CSS.escape(was)}"]`);
+        node?.setAttribute("data-b", now);
       }
     },
     set(markdown, urls, runs) {

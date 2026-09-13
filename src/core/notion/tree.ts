@@ -271,17 +271,25 @@ export async function readPage(
  * crear. Si algo falla a medias, lo que llegó ya está en Notion y la base
  * sólo cambia por lo que de verdad se confirmó.
  */
+/** Lo que dejo un guardado: los ids que nacieron, y el motivo si algo falto. */
+export interface Written {
+  /** id temporal → id real de Notion, de lo que acaba de crearse. */
+  born: Map<string, string>;
+  /** Si algo no llego. Lo demas si se guardo. */
+  error?: string;
+}
+
 export async function writePage(
   token: string,
   pageId: string,
   content: string,
   runs?: DocRuns,
-): Promise<Map<string, string>> {
+): Promise<Written> {
   const state = pageStates.get(pageId) ?? { blocks: [] };
   const draft = markedMarkdownToBlocks(content, runs);
 
   const diff = diffBlocks(state.blocks, draft);
-  if (diff.changes === 0) return new Map();
+  if (diff.changes === 0) return { born: new Map() };
 
   const result = await applyOperations(token, pageId, diff);
 
@@ -296,11 +304,22 @@ export async function writePage(
   if (result.errors.length > 0) {
     // Se guarda la base con lo que sí llegó: el borrador local sigue siendo
     // la red de seguridad y lo que falte se reintenta al guardarse otra vez.
-    const confirmed = next.filter((block) => oldById.has(block.id) || result.idMap.has(block.id));
+    // Los recien creados se reconocen por su id **real**, que es el que llevan
+    // en `next`. Antes se comparaba con las claves de `idMap`, que son las
+    // temporales: no coincidia ninguna, todo lo creado se caia de la base y el
+    // guardado siguiente lo creaba otra vez. Un fallo a medias —un bloque de
+    // cien que Notion rechaza— sembraba el documento de copias, una por intento.
+    const made = new Set(result.idMap.values());
+    const confirmed = next.filter((block) => oldById.has(block.id) || made.has(block.id));
     pageStates.set(pageId, {
       blocks: confirmed.map((block) => ({ ...block })),
     });
-    throw new Error(`No se pudo guardar todo: ${result.errors.length} bloque(s) no llegaron.`);
+    // No se lanza: lo creado tiene que llegar a quien llama aunque algo fallara,
+    // o el editor no se entera de esos ids y los vuelve a crear.
+    return {
+      born: result.idMap,
+      error: `No se pudo guardar todo: ${result.errors.length} bloque(s) no llegaron.`,
+    };
   }
 
   pageStates.set(pageId, { blocks: next.map((block) => ({ ...block })) });
@@ -308,7 +327,7 @@ export async function writePage(
   // lo que acaba de crearse. Si no, esos bloques vuelven a nacer temporales en
   // el guardado siguiente y Notion los borra y los recrea otra vez, perdiendo
   // sus comentarios y su historial en cada pulsacion.
-  return result.idMap;
+  return { born: result.idMap };
 }
 
 /** Olvidar el estado confirmado: la página se cerró. */

@@ -156,12 +156,14 @@ export function makeSaver(
     announce("saving");
 
     try {
-      const born = await writePage(token, id, sent, sentRuns);
+      const written = await writePage(token, id, sent, sentRuns);
       // Mientras viajaba pudo cambiarse de documento: lo que sigue es de otro.
       if (id !== pageId) return;
       // Los bloques que acaban de crearse ya tienen id de Notion: el editor
-      // tiene que saberlo antes de volver a guardar.
-      if (born.size > 0) onBorn?.(born);
+      // tiene que saberlo antes de volver a guardar. Tambien cuando algo fallo:
+      // lo que si llego no puede volver a crearse, o sale duplicado.
+      if (written.born.size > 0) onBorn?.(written.born);
+      if (written.error) { announce("failed", written.error); return; }
       stored = sent;
       storedKey = sentKey;
       if (!dirty()) {

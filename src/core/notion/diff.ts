@@ -305,11 +305,15 @@ export async function applyOperations(
     }
     if (batch.length === 0) { index += 1; continue; }
 
-    const children = batch
-      .map((op) => notionBodyOf(op.block))
-      .filter((body): body is Record<string, unknown> => body !== null);
+    // Cada cuerpo, atado a su operacion: hay bloques que no viajan —un adjunto
+    // ya subido, una imagen sin direccion— y al filtrarlos se corrian las
+    // posiciones. Notion devolvia los ids en orden y se guardaban contra el
+    // bloque equivocado, que es como perder un id y quedarse con dos copias.
+    const sending = batch
+      .map((op) => ({ op, body: notionBodyOf(op.block) }))
+      .filter((one): one is { op: SaveOperation; body: Record<string, unknown> } => one.body !== null);
 
-    if (children.length === 0) continue;
+    if (sending.length === 0) continue;
 
     try {
       await paced();
@@ -318,12 +322,12 @@ export async function applyOperations(
         `/blocks/${pageId}/children`,
         {
           method: "PATCH",
-          body: { children, ...(anchor ? { after: anchor } : {}) },
+          body: { children: sending.map((one) => one.body), ...(anchor ? { after: anchor } : {}) },
           ...(signal !== undefined ? { signal } : {}),
         },
       );
       (made.results ?? []).forEach((one, at) => {
-        const op = batch[at];
+        const op = sending[at]?.op;
         if (op) idMap.set(op.block.id, one.id);
       });
     } catch (cause) {

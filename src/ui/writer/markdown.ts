@@ -1,3 +1,4 @@
+import { MARK } from "../../core/notion/blocks.ts";
 import { el } from "../dom.ts";
 
 /**
@@ -54,7 +55,7 @@ export function headingsOf(text: string): Heading[] {
 /** Un título se lee sin sus marcas —ni las de formato ni el id de bloque—. */
 function strip(text: string): string {
   return text
-    .replace(/<!--b:[a-f0-9-]+-->\s*$/, "")
+    .replace(MARK, "")
     .replace(/`([^`]+)`/g, "$1")
     .replace(/\*\*([^*]+)\*\*/g, "$1")
     .replace(/\*([^*]+)\*/g, "$1")
@@ -154,7 +155,7 @@ function block(
 export function renderMarkdown(text: string): HTMLElement[] {
   // El id de bloque viaja con la línea para el diff del guardado; al componer
   // no pinta nada y al traducir no dice nada: se quita aquí, una sola vez.
-  const lines = text.split("\n").map((line) => line.replace(/<!--b:[a-f0-9-]+-->\s*$/, ""));
+  const lines = text.split("\n").map((line) => line.replace(MARK, ""));
   const out: HTMLElement[] = [];
   let at = 0;
 

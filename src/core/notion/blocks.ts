@@ -108,9 +108,20 @@ export interface DocBlock {
  * sobrevive a un guardado—.
  */
 let born = 0;
+/**
+ * Una semilla por sesion, ademas del contador.
+ *
+ * El contador solo no basta: un borrador guardado en el navegador conserva las
+ * marcas de los bloques que nunca llegaron a Notion, y al recargar la pagina el
+ * contador vuelve a empezar en uno. Sin semilla, el bloque nuevo de hoy nacia
+ * llamandose igual que el del borrador de ayer, dos nodos distintos acababan
+ * con el mismo id y el guardado los confundia: uno se sobrescribia con el texto
+ * del otro y el que perdia su id se creaba de nuevo, duplicado.
+ */
+const seed = Math.random().toString(36).slice(2, 8);
 export function tmpId(): string {
   born += 1;
-  return `tmp-${born}`;
+  return `tmp-${seed}-${born}`;
 }
 
 /** ¿Es un id nuestro, de un bloque que aun no existe en Notion? */
@@ -647,13 +658,26 @@ function mark(line: string, id: string): string {
 
 /** Los ids de bloque que lleva una línea, si lleva alguno. */
 export function blockIdOf(line: string): string | null {
-  const found = /<!--b:([A-Za-z0-9-]+)-->\s*$/.exec(line);
+  const found = MARK.exec(line);
   return found?.[1] ?? null;
 }
 
+/**
+ * La marca de bloque al final de una linea: `<!--b:id-->`.
+ *
+ * Vive aqui y se exporta porque la escriben unos y la quitan otros —el indice
+ * de apartados, la ruta, el asistente, el editor—, y una copia suelta que se
+ * quede corta no falla a la vista: deja la marca dentro del texto, que es peor
+ * que romperse. Paso: el id temporal gano una semilla con letras y las copias
+ * hexadecimales dejaron de reconocerlo.
+ *
+ * Sin `g`: una expresion global guarda por donde iba y falla una de cada dos.
+ */
+export const MARK = /<!--b:([A-Za-z0-9-]+)-->\s*$/;
+
 /** La línea sin la marca. */
 export function unmark(line: string): string {
-  return line.replace(/<!--b:([A-Za-z0-9-]+)-->\s*$/, "").trimEnd();
+  return line.replace(MARK, "").trimEnd();
 }
 
 /* --- el texto con marcas a bloques, conservando los ids -------------------- */

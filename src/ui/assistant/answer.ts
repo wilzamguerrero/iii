@@ -1,3 +1,4 @@
+import { MARK } from "../../core/notion/blocks.ts";
 import { el } from "../dom.ts";
 import { renderMarkdown } from "../writer/markdown.ts";
 
@@ -53,6 +54,6 @@ export function answerTurn(text: string): HTMLElement {
 /** El texto que se añade: sin las marcas de id de bloque, si las llevara. */
 function cleanOf(text: string): string {
   return text.split("\n").map((line) =>
-    line.replace(/<!--b:[a-f0-9-]+-->\s*$/, "").trimEnd(),
+    line.replace(MARK, "").trimEnd(),
   ).join("\n");
 }

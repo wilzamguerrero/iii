@@ -537,4 +537,159 @@ say(stayed.id === born, "y sobrevive al guardado siguiente con el mismo id",
   `${born} -> ${stayed.id}`);
 say(stayed.many === 1, "sin duplicarse", `n=${stayed.many}`);
 
+/* --- ni una copia de mas ------------------------------------------------ */
+
+/* El fallo que se veia en pantalla: el mismo parrafo repetido cuatro veces
+   debajo de la pregunta. Nacia de que el editor no sabia como se llamaban sus
+   bloques. Un bloque sin nombre se creaba de nuevo en cada guardado, y el que
+   heredaba un nombre ajeno se escribia encima de otro.
+
+   Hace falta mover y crear en el **mismo** guardado: mover es borrar y crear
+   —Notion no sabe mover—, asi que los dos van en la lista de creados, y era ahi
+   donde el reparto por posicion se descolocaba. */
+
+const stamped = await cdp.evaluate(`(() => {
+  const vis = document.querySelector(".vis");
+  const p = document.createElement("p");
+  p.className = "vis__b vis__b--p";
+  p.setAttribute("data-b", "");
+  p.textContent = "Recien escrito";
+  vis.append(p);
+  vis.dispatchEvent(new InputEvent("input", { bubbles: true }));
+  return p.getAttribute("data-b");
+})()`);
+say(typeof stamped === "string" && stamped.length > 0,
+  "un bloque nuevo se pone nombre en cuanto existe", String(stamped));
+
+await saved(cdp);
+
+const real = await cdp.evaluate(`(() => {
+  const vis = document.querySelector(".vis");
+  const p = [...vis.children].find((n) => n.textContent.trim() === "Recien escrito");
+  return p ? p.getAttribute("data-b") : null;
+})()`);
+say(typeof real === "string" && real !== stamped,
+  "y al guardarse aprende el que le dio Notion", `${stamped} -> ${real}`);
+
+/* Ahora mover y crear a la vez, que es lo que descolocaba el reparto. */
+await cdp.evaluate(`(() => {
+  const vis = document.querySelector(".vis");
+  const moved = [...vis.children].find((n) => n.textContent.trim() === "Recien escrito");
+  vis.prepend(moved);
+  const p = document.createElement("p");
+  p.className = "vis__b vis__b--p";
+  p.setAttribute("data-b", "");
+  p.textContent = "Companero del movido";
+  moved.after(p);
+  vis.dispatchEvent(new InputEvent("input", { bubbles: true }));
+})()`);
+await saved(cdp);
+
+/* Y un guardado mas: si algun bloque perdio su nombre, aqui sale la copia. */
+await cdp.evaluate(`(() => {
+  const vis = document.querySelector(".vis");
+  const p = [...vis.children].find((n) => n.tagName === "P" && n.textContent.trim());
+  p.textContent = p.textContent + " z";
+  vis.dispatchEvent(new InputEvent("input", { bubbles: true }));
+})()`);
+await saved(cdp);
+
+const copies = await cdp.evaluate(`(() => {
+  const text = (b) => {
+    const part = b[b.type];
+    const rich = part && part.rich_text ? part.rich_text : [];
+    return rich.map((r) => (r.text ? r.text.content : (r.plain_text || ""))).join("").trim();
+  };
+  const all = window.__blocks().map(text);
+  const count = (want) => all.filter((one) => one === want || one === want + " z").length;
+  const seen = new Map();
+  for (const one of all) {
+    if (!one) continue;
+    seen.set(one, (seen.get(one) || 0) + 1);
+  }
+  const repeated = [...seen].filter(([, n]) => n > 1).map(([t]) => t);
+  return {
+    movido: count("Recien escrito"),
+    nuevo: count("Companero del movido"),
+    repeated,
+    ids: window.__blocks().length === new Set(window.__blocks().map((b) => b.id)).size,
+  };
+})()`);
+
+say(copies.movido === 1, "el bloque que se movio esta una sola vez", `n=${copies.movido}`);
+say(copies.nuevo === 1, "y el que nacio a su lado tambien", `n=${copies.nuevo}`);
+say(copies.repeated.length === 0,
+  "ningun texto de la pagina esta repetido", copies.repeated.join(" | "));
+say(copies.ids === true, "y ningun bloque comparte id con otro");
+
+/* --- lo que escribio la IA se selecciona y se edita ---------------------- */
+
+/* Es texto del documento, no un aviso: se puede marcar con el raton, borrar,
+   escribir dentro. Y al tocarlo el color se retira de esa palabra, que es lo
+   que distingue «lo escribio el modelo» de «salio de aqui alguna vez». */
+
+await cdp.evaluate(`(() => {
+  const vis = document.querySelector(".vis");
+  const p = document.createElement("p");
+  p.className = "vis__b vis__b--p";
+  p.setAttribute("data-b", "");
+  const span = document.createElement("span");
+  span.className = "vis__ai";
+  span.setAttribute("data-ai", "1");
+  span.setAttribute("data-ai-was", "Propuesta del modelo");
+  span.textContent = "Propuesta del modelo";
+  p.append(span);
+  vis.append(p);
+  window.__blue = p;
+  vis.dispatchEvent(new InputEvent("input", { bubbles: true }));
+})()`);
+
+const pick = await cdp.evaluate(`(() => {
+  const span = window.__blue.querySelector("[data-ai]");
+  const range = document.createRange();
+  range.setStart(span.firstChild, 0);
+  range.setEnd(span.firstChild, 9);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  const style = getComputedStyle(span);
+  return {
+    picked: sel.toString(),
+    select: style.userSelect || style.webkitUserSelect || "auto",
+    events: style.pointerEvents,
+    editable: window.__blue.closest("[contenteditable]") !== null,
+  };
+})()`);
+
+say(pick.picked === "Propuesta", "el texto azul se puede marcar con el raton", pick.picked);
+say(pick.select !== "none", "nada le impide seleccionarse", pick.select);
+say(pick.events !== "none", "ni recibir el raton", pick.events);
+say(pick.editable === true, "y vive dentro de lo que se escribe");
+
+/* Se escribe dentro: el texto cambia y la palabra tocada deja de ser suya. */
+const typed = await cdp.evaluate(`(() => {
+  const vis = document.querySelector(".vis");
+  const span = window.__blue.querySelector("[data-ai]");
+  const node = span.firstChild;
+  node.data = "Propuesta del modelito";
+  const range = document.createRange();
+  range.setStart(node, 22);
+  range.collapse(true);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  vis.dispatchEvent(new InputEvent("input", { bubbles: true }));
+  return {
+    text: window.__blue.textContent,
+    azul: [...window.__blue.querySelectorAll("[data-ai]")].map((one) => one.textContent).join("|"),
+    caret: window.getSelection().toString() === "" && window.__blue.contains(window.getSelection().anchorNode),
+  };
+})()`);
+
+say(typed.text === "Propuesta del modelito",
+  "se puede escribir dentro y el texto queda como se escribio", typed.text);
+say(typed.azul === "Propuesta del ",
+  "la palabra tocada deja de ser de la IA, entera", typed.azul);
+say(typed.caret === true, "y el cursor se queda donde estaba escribiendo");
+
 cdp.close();

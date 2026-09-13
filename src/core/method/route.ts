@@ -15,6 +15,7 @@
  * documento (cuáles están sin responder).
  */
 
+import { MARK as BLOCK_MARK } from "../notion/blocks.ts";
 import {
   COMMON,
   SITUATED_HEAD,
@@ -98,7 +99,7 @@ const BRANCH_STEPS = 5;
  */
 const MIN_WORDS = 20;
 
-const MARK = /<!--b:[a-f0-9-]+-->\s*$/;
+const MARK = BLOCK_MARK;
 const HEAD = /^##\s+(.+?)\s*$/;
 const QUOTE = /^>\s?(.*)$/;
 const NATURE = /^>\s*Naturaleza:\s*(.+?)(?:\s*·|$)/i;
