@@ -37,6 +37,9 @@ import type { Route, RouteStep } from "../../core/method/route.ts";
  * evidencia sostiene sigue siendo un gesto de la persona.
  */
 
+/** Cómo se pinta una arista: fuera de la ruta, en la ruta, o la que corre. */
+type Flow = "off" | "on" | "flow";
+
 export interface MapOptions {
   route: () => Route;
   content: () => string;
@@ -61,31 +64,33 @@ export interface RouteMap {
 /* --- la retícula del lienzo ----------------------------------------------- */
 
 const NODE_W = 210;
+/** El alto mínimo de un nodo, y el que se supone si no se puede medir. */
 const NODE_H = 64;
-/** Separación entre columnas y entre filas, de borde a borde del siguiente. */
+/** Separación entre columnas, del borde izquierdo al borde izquierdo siguiente. */
 const COL = 260;
-const ROW = 80;
+/** El aire entre dos nodos de la misma columna. */
+const GAP = 18;
 const PAD = 20;
 
-/** El centro vertical del abanico: todo lo demás se alinea con él. */
-const FAN_H = (NATURES.length - 1) * ROW + NODE_H;
-const MID = PAD + FAN_H / 2;
-
-const CANVAS_W = PAD + 7 * COL + NODE_W + PAD;
-const CANVAS_H = PAD + FAN_H + PAD;
+/** Las ocho columnas: cuatro comunes, el abanico, la rama y las dos salidas. */
+const COLS = 8;
 
 const ZOOM_MIN = 0.35;
 const ZOOM_MAX = 1.6;
 
+/** Un nodo puesto: dónde está y **cuánto ocupa de verdad**. */
 interface Box {
   x: number;
   y: number;
+  w: number;
+  h: number;
 }
 
 interface Dot {
   /** Identidad para las aristas. */
   key: string;
-  at: Box;
+  /** La columna donde cae. El sitio exacto se calcula al pintar, no aquí. */
+  col: number;
   kind: "paso" | "naturaleza" | "salida";
   head: string;
   say: string;
@@ -94,6 +99,56 @@ interface Dot {
   tag?: string;
   onPick?: () => void;
   title?: string;
+}
+
+/**
+ * Dónde va cada nodo, **medido y no supuesto**.
+ *
+ * Antes el alto era la constante `NODE_H` y las filas iban a un paso fijo. Pero
+ * un nodo crece con su texto: «Potencial no activado» ocupa tres líneas y
+ * «Tensión» una, y el paso fijo no lo sabía. Los nodos altos se metían encima
+ * del de abajo —se veía en el abanico de siete y en la rama— y, lo que es peor,
+ * las aristas salían a media altura de un alto que nadie tenía: por eso las
+ * curvas llegaban torcidas al elegir una naturaleza.
+ *
+ * Se mide lo que el navegador ya pintó (`offsetHeight`) y se apila con aire de
+ * verdad. Cada columna se centra sobre el mismo eje, así que la fila común
+ * sigue leyéndose como una fila aunque el abanico crezca.
+ */
+function layout(dots: readonly Dot[], heights: ReadonlyMap<string, number>): {
+  spots: Map<string, Box>;
+  plane: { w: number; h: number };
+} {
+  const byCol = new Map<number, Dot[]>();
+  for (const one of dots) {
+    const list = byCol.get(one.col);
+    if (list) list.push(one);
+    else byCol.set(one.col, [one]);
+  }
+
+  const high = (one: Dot): number => Math.max(heights.get(one.key) ?? NODE_H, NODE_H);
+  const tall = (list: readonly Dot[]): number =>
+    list.reduce((sum, one) => sum + high(one), 0) + Math.max(list.length - 1, 0) * GAP;
+
+  // El eje: la mitad de la columna más alta. Se calcula antes de colocar nada,
+  // porque todas las columnas se centran sobre él.
+  const highest = Math.max(...[...byCol.values()].map((list) => tall(list)), NODE_H);
+  const mid = PAD + highest / 2;
+
+  const spots = new Map<string, Box>();
+  for (const [col, list] of byCol) {
+    let y = mid - tall(list) / 2;
+    for (const one of list) {
+      const h = high(one);
+      spots.set(one.key, { x: PAD + col * COL, y, w: NODE_W, h });
+      y += h + GAP;
+    }
+  }
+
+  return {
+    spots,
+    plane: { w: PAD + (COLS - 1) * COL + NODE_W + PAD, h: highest + PAD * 2 },
+  };
 }
 
 export function mountMap(options: MapOptions): RouteMap {
@@ -114,7 +169,14 @@ export function mountMap(options: MapOptions): RouteMap {
   const canvas = el("div", { class: "map__canvas" }, [edges, nodes]);
   const stage = el("div", { class: "map__stage", attrs: { tabindex: "0" } }, [canvas]);
   const aside = el("aside", { class: "map__side" });
-  const footer = el("div", { class: "map__foot" });
+  /* La franja de la decisión. Estaba abajo y la hoja del proyecto se le ponía
+     encima: el botón de tomar la ruta quedaba debajo de otra cosa, que es como
+     no estar. Arriba, pegada a la barra, no hay nada que pueda taparla. */
+  const deal = el("div", { class: "map__deal" });
+  /** El zoom, en letra: un número que se lee dice más que tres botones. */
+  const readout = el("span", { class: "map__zn", attrs: { "aria-hidden": "true" } });
+  /** Lo que mide el lienzo ahora mismo, que lo decide lo que se pintó. */
+  let field = { w: PAD * 2 + NODE_W, h: PAD * 2 + NODE_H };
 
   const button = el("button", {
     class: "wr__act",
@@ -138,8 +200,10 @@ export function mountMap(options: MapOptions): RouteMap {
       el("span", { class: "map__rule", text: DIAGNOSIS_RULE }),
       el("div", { class: "map__zoom" }, [
         zoomer("minus", "Alejar", () => { scale(zoom - 0.12); }),
-        zoomer("fit", "Ajustar a la pantalla", () => { fit(); }),
+        readout,
         zoomer("plus", "Acercar", () => { scale(zoom + 0.12); }),
+        el("span", { class: "map__zoom__bar" }),
+        zoomer("fit", "Ajustar a la pantalla", () => { fit(); }),
       ]),
       el("button", {
         class: "map__x",
@@ -147,8 +211,8 @@ export function mountMap(options: MapOptions): RouteMap {
         on: { click: () => { close(); } },
       }, [icon("cross", "ico ico--small")]),
     ]),
+    deal,
     el("div", { class: "map__body" }, [stage, aside]),
-    footer,
   ]);
 
   function zoomer(glyph: "minus" | "plus" | "fit", title: string, run: () => void): HTMLElement {
@@ -179,7 +243,7 @@ export function mountMap(options: MapOptions): RouteMap {
       const live = route.steps.find((one) => one.head === head);
       out.push({
         key: `comun-${step.id}`,
-        at: { x: PAD + index * COL, y: MID - NODE_H / 2 },
+        col: index,
         kind: "paso",
         head,
         say: step.output,
@@ -190,12 +254,12 @@ export function mountMap(options: MapOptions): RouteMap {
       });
     });
 
-    NATURES.forEach((one, index) => {
+    NATURES.forEach((one) => {
       const taken = route.nature?.id === one.id;
       const rank = guesses.findIndex((guess) => guess.nature === one.id);
       out.push({
         key: `nat-${one.id}`,
-        at: { x: PAD + 4 * COL, y: PAD + index * ROW },
+        col: 4,
         kind: "naturaleza",
         head: one.name,
         say: one.question,
@@ -207,15 +271,14 @@ export function mountMap(options: MapOptions): RouteMap {
     });
 
     const steps = nature?.steps ?? [];
-    const top = MID - ((Math.max(steps.length, 1) - 1) * ROW + NODE_H) / 2;
     if (nature && steps.length > 0) {
-      steps.forEach((step, index) => {
+      steps.forEach((step) => {
         const live = route.nature?.id === nature.id
           ? route.steps.find((one) => one.n === step.n && one.part === "naturaleza")
           : undefined;
         out.push({
           key: `ram-${nature.id}-${step.n}`,
-          at: { x: PAD + 5 * COL, y: top + index * ROW },
+          col: 5,
           kind: "paso",
           head: step.name,
           say: step.ask,
@@ -231,7 +294,7 @@ export function mountMap(options: MapOptions): RouteMap {
       // exactamente qué falta.
       out.push({
         key: "ram-vacia",
-        at: { x: PAD + 5 * COL, y: MID - NODE_H / 2 },
+        col: 5,
         kind: "paso",
         head: "Cinco pasos",
         say: "elige una naturaleza para verlos",
@@ -243,7 +306,7 @@ export function mountMap(options: MapOptions): RouteMap {
     const situated = route.steps.find((one) => one.id === "situada");
     out.push({
       key: "out-sintesis",
-      at: { x: PAD + 6 * COL, y: MID - NODE_H / 2 },
+      col: 6,
       kind: "salida",
       head: SYNTHESIS_HEAD,
       say: "los siete puntos de la situación",
@@ -252,7 +315,7 @@ export function mountMap(options: MapOptions): RouteMap {
     });
     out.push({
       key: "out-situada",
-      at: { x: PAD + 7 * COL, y: MID - NODE_H / 2 },
+      col: 7,
       kind: "salida",
       head: SITUATED_HEAD,
       say: "pasa a Idear",
@@ -270,39 +333,55 @@ export function mountMap(options: MapOptions): RouteMap {
     return "todo";
   }
 
-  /** Las aristas: de qué nodo a qué nodo, y si la ruta pasa por ellas. */
-  function wires(route: Route, all: readonly Dot[]): [string, string, boolean][] {
+  /**
+   * Las aristas: de qué nodo a qué nodo, y cómo se pintan.
+   *
+   * Tres estados, no dos. «off» es un camino posible que nadie ha tomado; «on»
+   * es por donde pasa la ruta; «flow» es **la arista que llega a donde se está
+   * ahora mismo**, y ésa se anima. La animación no decora: en un grafo de
+   * catorce nodos, el que dice «estás aquí» tiene que encontrarse sin leer, y
+   * un trazo que corre se encuentra antes que un borde más gordo.
+   *
+   * «flow» lleva además la clase de «on»: la ruta sí pasa por ahí, y quien
+   * cuente el camino encendido tiene que contarla.
+   */
+  function wires(route: Route, all: readonly Dot[]): [string, string, Flow][] {
     const shown = picked ?? route.nature?.id ?? null;
     const nature = shown ? natureOf(shown) : null;
     const live = (id: string): boolean => shown !== null && id === shown;
 
-    const out: [string, string, boolean][] = [];
+    // El nodo donde se está: la arista que le llega es la que corre.
+    const now = all.find((one) => one.state === "now")?.key ?? null;
+    const flow = (from: string, to: string, on: boolean): [string, string, Flow] =>
+      [from, to, on ? (to === now ? "flow" : "on") : "off"];
+
+    const out: [string, string, Flow][] = [];
     for (let index = 0; index < COMMON.length - 1; index += 1) {
       const from = COMMON[index]?.id;
       const to = COMMON[index + 1]?.id;
-      if (from && to) out.push([`comun-${from}`, `comun-${to}`, true]);
+      if (from && to) out.push(flow(`comun-${from}`, `comun-${to}`, true));
     }
 
     // El abanico: cuatro pasos comunes y de ahí siete caminos posibles. Es la
     // imagen de la lámina —«desde aquí la ruta se bifurca»— y es lo único de
     // este mapa que no se puede decir con una línea recta.
-    for (const one of NATURES) out.push(["comun-diagnostico", `nat-${one.id}`, live(one.id)]);
+    for (const one of NATURES) out.push(flow("comun-diagnostico", `nat-${one.id}`, live(one.id)));
 
     if (nature) {
       const steps = nature.steps;
-      out.push([`nat-${nature.id}`, `ram-${nature.id}-${steps[0]?.n ?? 1}`, true]);
+      out.push(flow(`nat-${nature.id}`, `ram-${nature.id}-${steps[0]?.n ?? 1}`, true));
       for (let index = 0; index < steps.length - 1; index += 1) {
-        out.push([
+        out.push(flow(
           `ram-${nature.id}-${steps[index]?.n ?? 0}`,
           `ram-${nature.id}-${steps[index + 1]?.n ?? 0}`,
           true,
-        ]);
+        ));
       }
-      out.push([`ram-${nature.id}-${steps[steps.length - 1]?.n ?? 5}`, "out-sintesis", true]);
+      out.push(flow(`ram-${nature.id}-${steps[steps.length - 1]?.n ?? 5}`, "out-sintesis", true));
     } else {
-      out.push(["ram-vacia", "out-sintesis", false]);
+      out.push(flow("ram-vacia", "out-sintesis", false));
     }
-    out.push(["out-sintesis", "out-situada", true]);
+    out.push(flow("out-sintesis", "out-situada", true));
 
     const known = new Set(all.map((one) => one.key));
     return out.filter(([from, to]) => known.has(from) && known.has(to));
@@ -310,30 +389,77 @@ export function mountMap(options: MapOptions): RouteMap {
 
   /* --- pintar ------------------------------------------------------------- */
 
+  /**
+   * Pintar, en dos pasadas: primero los nodos para poder medirlos, después las
+   * aristas con las medidas de verdad.
+   *
+   * El orden no es un capricho. El alto de un nodo lo decide su texto, y sólo
+   * el navegador sabe cuánto ocupa una vez pintado. Una sola pasada tendría que
+   * suponerlo, y suponer es lo que dejaba nodos encima de otros y curvas
+   * llegando a media altura de una caja que no medía eso.
+   *
+   * Se leen todos los altos seguidos y después se escriben todas las
+   * posiciones: así el navegador recalcula la página una vez y no catorce.
+   */
   function paint(): void {
     const route = options.route();
     const all = graph(route);
-    const spots = new Map(all.map((one) => [one.key, one.at]));
 
-    canvas.style.width = `${CANVAS_W}px`;
-    canvas.style.height = `${CANVAS_H}px`;
-    edges.setAttribute("viewBox", `0 0 ${CANVAS_W} ${CANVAS_H}`);
-    edges.setAttribute("width", String(CANVAS_W));
-    edges.setAttribute("height", String(CANVAS_H));
+    // Primera pasada: los nodos existen y tienen ancho, todavía sin sitio.
+    const made = new Map(all.map((one) => [one.key, node(one)] as const));
+    render(nodes, ...made.values());
 
-    render(edges, ...wires(route, all).flatMap(([from, to, on]) => {
+    // Medir. Con el mapa cerrado todo mide cero: entonces vale el alto mínimo,
+    // y al abrirse se vuelve a pintar con las medidas buenas.
+    const heights = new Map<string, number>();
+    for (const [key, box] of made) heights.set(key, box.offsetHeight);
+
+    const { spots, plane } = layout(all, heights);
+
+    // Segunda pasada: colocar.
+    for (const [key, box] of made) {
+      const at = spots.get(key);
+      if (!at) continue;
+      box.style.left = `${at.x}px`;
+      box.style.top = `${at.y}px`;
+    }
+
+    canvas.style.width = `${plane.w}px`;
+    canvas.style.height = `${plane.h}px`;
+    edges.setAttribute("viewBox", `0 0 ${plane.w} ${plane.h}`);
+    edges.setAttribute("width", String(plane.w));
+    edges.setAttribute("height", String(plane.h));
+    field = plane;
+
+    const drawn = wires(route, all).flatMap(([from, to, how]) => {
       const a = spots.get(from);
       const b = spots.get(to);
       if (!a || !b) return [];
       return [svg("path", {
-        class: `map__wire${on ? " is-on" : ""}`,
+        class: `map__wire${how === "off" ? "" : " is-on"}${how === "flow" ? " is-flow" : ""}`,
         d: curve(a, b),
       })];
-    }));
+    });
 
-    render(nodes, ...all.map((one) => node(one)));
+    // El cerco de donde se está, alrededor del nodo y no dentro: un rectángulo
+    // de puntos que corren. Va en el SVG porque un borde de CSS no se puede
+    // poner a andar, y así sigue la forma exacta del nodo, esquinas incluidas.
+    const here = all.find((one) => one.state === "now");
+    const at = here ? spots.get(here.key) : undefined;
+    if (at) {
+      drawn.push(svg("rect", {
+        class: "map__ants",
+        x: String(at.x - 4),
+        y: String(at.y - 4),
+        width: String(at.w + 8),
+        height: String(at.h + 8),
+        rx: "5",
+      }));
+    }
+
+    render(edges, ...drawn);
     render(aside, ...side(route));
-    render(footer, ...foot(route));
+    render(deal, ...decide(route));
     place();
   }
 
@@ -354,8 +480,8 @@ export function mountMap(options: MapOptions): RouteMap {
       ...(one.onPick ? { on: { click: () => { one.onPick?.(); } } } : {}),
     }, kids);
 
-    box.style.left = `${one.at.x}px`;
-    box.style.top = `${one.at.y}px`;
+    // El sitio lo pone el pintado, después de medir. Aquí sólo el ancho, que
+    // es el que hace que el texto se parta y decida el alto.
     box.style.width = `${NODE_W}px`;
     box.style.minHeight = `${NODE_H}px`;
     return box;
@@ -497,16 +623,16 @@ export function mountMap(options: MapOptions): RouteMap {
     return out;
   }
 
-  /** La barra de abajo: tomar la ruta, cambiarla, o nada. */
-  function foot(route: Route): HTMLElement[] {
+  /** La franja de la decisión: tomar la ruta, cambiarla, o nada. */
+  function decide(route: Route): HTMLElement[] {
     const taken = route.nature;
     if (!picked || picked === taken?.id) {
       if (!taken) {
-        return [el("p", { class: "map__foot__say", text:
+        return [el("p", { class: "map__deal__say", text:
           "Pulsa una naturaleza para ver su rama entera. El documento no se toca hasta " +
           "que tomes la ruta." })];
       }
-      return [el("p", { class: "map__foot__say", text:
+      return [el("p", { class: "map__deal__say", text:
         `La ruta de este documento es «${taken.name}». Pulsa otra naturaleza para ver ` +
         "a dónde llevaría." })];
     }
@@ -515,12 +641,12 @@ export function mountMap(options: MapOptions): RouteMap {
     if (!nature) return [];
 
     return [
-      el("p", { class: "map__foot__say", text: taken
+      el("p", { class: "map__deal__say", text: taken
         ? `Cambiar de «${taken.name}» a «${nature.name}». Lo que ya escribiste en la rama ` +
           "anterior se queda en el documento: no se borra nada."
         : `Tomar la ruta de «${nature.name}»: sus cinco pasos entran en el documento con ` +
           "sus preguntas dentro." }),
-      el("div", { class: "map__foot__acts" }, [
+      el("div", { class: "map__deal__acts" }, [
         el("button", {
           class: "btn",
           text: taken ? `Cambiar a ${nature.name}` : `Tomar la ruta de ${nature.name}`,
@@ -616,6 +742,7 @@ export function mountMap(options: MapOptions): RouteMap {
   function place(): void {
     const size = Math.round(zoom * 1000) / 1000;
     canvas.style.transform = `translate(${Math.round(tx)}px, ${Math.round(ty)}px) scale(${size})`;
+    readout.textContent = `${Math.round(zoom * 100)}%`;
   }
 
   /** Acercar o alejar desde los botones: el centro de la pantalla manda. */
@@ -661,11 +788,11 @@ export function mountMap(options: MapOptions): RouteMap {
     if (box.width < 40) return;
     const margin = 28;
     zoom = clampZoom(Math.min(
-      (box.width - margin * 2) / CANVAS_W,
-      (box.height - margin * 2) / CANVAS_H,
+      (box.width - margin * 2) / field.w,
+      (box.height - margin * 2) / field.h,
     ));
-    tx = (box.width - CANVAS_W * zoom) / 2;
-    ty = (box.height - CANVAS_H * zoom) / 2;
+    tx = (box.width - field.w * zoom) / 2;
+    ty = (box.height - field.h * zoom) / 2;
     place();
   }
 
@@ -769,18 +896,18 @@ function svg(tag: string, attrs: Record<string, string>): SVGElement {
  * recta.
  */
 function curve(a: Box, b: Box): string {
-  const sideways = b.x > a.x + NODE_W / 2;
+  const sideways = b.x > a.x + a.w / 2;
   if (sideways) {
-    const x1 = a.x + NODE_W;
-    const y1 = a.y + NODE_H / 2;
+    const x1 = a.x + a.w;
+    const y1 = a.y + a.h / 2;
     const x2 = b.x;
-    const y2 = b.y + NODE_H / 2;
+    const y2 = b.y + b.h / 2;
     const pull = Math.max(40, (x2 - x1) / 2);
     return `M ${x1} ${y1} C ${x1 + pull} ${y1}, ${x2 - pull} ${y2}, ${x2} ${y2}`;
   }
-  const x1 = a.x + NODE_W / 2;
-  const y1 = a.y + NODE_H;
-  const x2 = b.x + NODE_W / 2;
+  const x1 = a.x + a.w / 2;
+  const y1 = a.y + a.h;
+  const x2 = b.x + b.w / 2;
   const y2 = b.y;
   const pull = Math.max(24, (y2 - y1) / 2);
   return `M ${x1} ${y1} C ${x1} ${y1 + pull}, ${x2} ${y2 - pull}, ${x2} ${y2}`;

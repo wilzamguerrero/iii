@@ -193,7 +193,7 @@ const map = await cdp.evaluate(`(() => {
     where: root.querySelector(".map__where__say").textContent,
     steps: root.querySelector(".map__where__n").textContent,
     notes: root.querySelectorAll(".map__notes__list li").length,
-    foot: root.querySelector(".map__foot__say").textContent.slice(0, 30),
+    foot: root.querySelector(".map__deal__say").textContent.slice(0, 30),
   };
 })()`);
 say(map.open === true && map.expanded === "true", "el mapa se abre desde la barra");
@@ -234,7 +234,7 @@ const preview = await cdp.evaluate(`(() => {
     tools: after.querySelector(".map__card__tools").textContent.indexOf("5 porqués") >= 0,
     branch: branch.length,
     wires: [...after.querySelectorAll(".map__wire")].filter((w) => w.getAttribute("class").indexOf("is-on") >= 0).length,
-    foot: after.querySelector(".map__foot__say").textContent.slice(0, 22),
+    foot: after.querySelector(".map__deal__say").textContent.slice(0, 22),
   };
 })()`);
 const after = await cdp.evaluate(`document.querySelector(".vis").textContent.length`);
@@ -252,7 +252,7 @@ say(after === before, "mirar no escribe una sola letra en el documento",
 
 await cdp.evaluate(`(() => {
   const root = document.getElementById("wr-map");
-  [...root.querySelectorAll(".map__foot__acts .btn")]
+  [...root.querySelectorAll(".map__deal__acts .btn")]
     .find((b) => b.textContent.indexOf("Tomar la ruta") === 0).click();
 })()`);
 await wait(300);
@@ -274,7 +274,7 @@ const taken = await cdp.evaluate(`(() => {
     situated: heads.indexOf("Intención situada") >= 0,
     taken: nodes.filter((n) => n.className.indexOf("is-taken") >= 0).length,
     cardKind: root.querySelector(".map__card__kind").textContent,
-    foot: root.querySelector(".map__foot__say").textContent.slice(0, 26),
+    foot: root.querySelector(".map__deal__say").textContent.slice(0, 26),
     where: root.querySelector(".map__where__say").textContent,
     steps: root.querySelector(".map__where__n").textContent,
   };
@@ -332,15 +332,15 @@ const switching = await cdp.evaluate(`(() => {
   const root = document.getElementById("wr-map");
   return {
     card: root.querySelector(".map__card__kind").textContent,
-    foot: root.querySelector(".map__foot__say").textContent,
-    btn: [...root.querySelectorAll(".map__foot__acts .btn")][0].textContent,
+    foot: root.querySelector(".map__deal__say").textContent,
+    btn: [...root.querySelectorAll(".map__deal__acts .btn")][0].textContent,
   };
 })()`);
 say(switching.card === "Estás mirando" && switching.btn === "Cambiar a Tensión",
   "cambiar de ruta se ofrece como cambio, no como toma", switching.btn);
 say(switching.foot.indexOf("no se borra nada") > 0, "y promete lo que cumple: no borrar", switching.foot.slice(0, 60));
 
-await cdp.evaluate(`[...document.querySelectorAll("#wr-map .map__foot__acts .btn")]
+await cdp.evaluate(`[...document.querySelectorAll("#wr-map .map__deal__acts .btn")]
   .find((b) => b.textContent === "Cambiar a Tensión").click()`);
 await wait(300);
 
@@ -396,6 +396,262 @@ const bar = await cdp.evaluate(`(() => {
 })()`);
 say(bar.found === true && bar.expanded === "true" && bar.opened === true,
   "el boton de la barra vuelve a abrir la columna");
+
+/* --- el mapa se mira: la decision arriba, nada pisado, el zoom a la vista ---
+
+   Cinco cosas que se pidieron mirando el mapa en pantalla. Las cinco son
+   geometria, asi que aqui se miden en vez de suponerse:
+
+   1. La franja de la decision esta **arriba**. Abajo la hoja del proyecto se le
+      ponia encima y el boton de tomar la ruta quedaba debajo de otra cosa.
+   2. Ningun nodo pisa a otro. El alto de un nodo lo decide su texto, y con el
+      paso de fila fijo de antes los de tres lineas se metian en el de abajo.
+   3. Las aristas salen y llegan al borde **de verdad** de cada nodo, no al de
+      un alto supuesto. Era lo que las hacia llegar torcidas.
+   4. El zoom tiene su numero, se ve, y se mueve al tocarlo.
+   5. Donde se esta lleva un cerco alrededor, y la arista que llega corre.
+
+   Se mide dos veces: con la ruta tomada, y con otra naturaleza en vista previa
+   —«Oportunidad», que es el caso que se vio mal: sus pasos son los de texto mas
+   largo y son los que se pisaban—. */
+
+await cdp.evaluate(`(() => {
+  if (document.getElementById("wr-map").hidden) {
+    [...document.querySelectorAll(".wr__act")].find((b) => b.textContent === "Mapa").click();
+  }
+})()`);
+await wait(400);
+
+const shape = await cdp.evaluate(`(() => {
+  const root = document.getElementById("wr-map");
+  const pill = root.querySelector(".map__zoom");
+  return {
+    order: [...root.children].map((k) => k.className),
+    zoom: (root.querySelector(".map__zn").textContent || "").trim(),
+    wide: Math.round(pill.getBoundingClientRect().width),
+    framed: getComputedStyle(pill).borderTopWidth,
+    bar: root.querySelectorAll(".map__zoom__bar").length,
+  };
+})()`);
+say(shape.order.indexOf("map__deal") === 1 && shape.order.indexOf("map__body") === 2,
+  "la franja de la decision va arriba, donde nada la tapa", shape.order.join(" | "));
+say(/^\d+%$/.test(shape.zoom), "el zoom dice a que distancia se mira", shape.zoom);
+say(shape.wide > 90 && shape.framed !== "0px" && shape.bar === 1,
+  "y su mando se ve: agrupado, con borde y con su raya",
+  "ancho=" + shape.wide + " borde=" + shape.framed);
+
+/* Acercar y alejar. Uno de los dos puede estar contra su tope segun lo que mida
+   la ventana, pero los dos a la vez no: por eso se piden los dos. */
+const zoomed = await cdp.evaluate(`(() => {
+  const root = document.getElementById("wr-map");
+  const read = () => root.querySelector(".map__zn").textContent;
+  const zs = [...root.querySelectorAll(".map__zb")];
+  const start = read();
+  zs[1].click();
+  const up = read();
+  zs[0].click();
+  zs[0].click();
+  const down = read();
+  return { start, up, down };
+})()`);
+say(zoomed.up !== zoomed.start || zoomed.down !== zoomed.up,
+  "y el numero se mueve al acercar o alejar",
+  zoomed.start + " -> " + zoomed.up + " -> " + zoomed.down);
+
+/* La medida de verdad. Se lee de la pagina ya pintada: donde esta cada nodo,
+   cuanto ocupa, y por donde entra y sale cada arista. */
+const RULER = `(() => {
+  const map = document.getElementById("wr-map");
+  const nodes = [...map.querySelectorAll(".map__n")].map((n) => ({
+    head: n.querySelector(".map__n__head").textContent,
+    x: n.offsetLeft, y: n.offsetTop, w: n.offsetWidth, h: n.offsetHeight,
+    now: n.className.indexOf("is-now") >= 0,
+    ghost: n.className.indexOf("is-ghost") >= 0,
+  }));
+
+  // El peor solape, si lo hay: dos rectangulos que se cruzan.
+  let worst = null;
+  for (let i = 0; i < nodes.length; i += 1) {
+    for (let j = i + 1; j < nodes.length; j += 1) {
+      const a = nodes[i], b = nodes[j];
+      const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+      const oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+      if (ox > 0 && oy > 0 && (!worst || ox * oy > worst.area)) {
+        worst = { area: ox * oy, a: a.head, b: b.head, ox: Math.round(ox), oy: Math.round(oy) };
+      }
+    }
+  }
+
+  /* Por donde puede salir una arista y por donde puede llegar. Dos maneras: de
+     lado (derecha -> izquierda, a media altura) y hacia abajo (abajo -> arriba,
+     a medio ancho), que es como se enlazan los pasos de una misma columna.
+     La media altura sale del alto medido: si el dibujo usara un alto supuesto,
+     estas cuentas no cuadrarian, que es justo lo que se quiere comprobar. */
+  const near = (p, q) => Math.abs(p.x - q.x) < 2.5 && Math.abs(p.y - q.y) < 2.5;
+  const leaves = [];
+  const lands = [];
+  for (const n of nodes) {
+    leaves.push({ head: n.head, x: n.x + n.w, y: n.y + n.h / 2 });
+    leaves.push({ head: n.head, x: n.x + n.w / 2, y: n.y + n.h });
+    lands.push({ head: n.head, x: n.x, y: n.y + n.h / 2 });
+    lands.push({ head: n.head, x: n.x + n.w / 2, y: n.y });
+  }
+
+  const wires = [...map.querySelectorAll("path.map__wire")];
+  let loose = null;
+  let flowing = 0;
+  let flowOn = true;
+  let onNow = 0;
+  const here = nodes.find((n) => n.now) || null;
+  for (const p of wires) {
+    const a = p.getPointAtLength(0);
+    const b = p.getPointAtLength(p.getTotalLength());
+    if (!loose && !leaves.some((q) => near(a, q))) {
+      loose = { end: "sale", x: Math.round(a.x), y: Math.round(a.y) };
+    }
+    if (!loose && !lands.some((q) => near(b, q))) {
+      loose = { end: "llega", x: Math.round(b.x), y: Math.round(b.y) };
+    }
+    const cls = p.getAttribute("class");
+    if (cls.indexOf("is-flow") >= 0) {
+      flowing += 1;
+      if (cls.indexOf("is-on") < 0) flowOn = false;
+      if (here && near(b, { x: here.x, y: here.y + here.h / 2 })) onNow += 1;
+    }
+  }
+
+  const ring = map.querySelector(".map__ants");
+  const highs = [...new Set(nodes.map((n) => n.h))];
+
+  return {
+    nodes: nodes.length,
+    ghosts: nodes.filter((n) => n.ghost).length,
+    worst,
+    wires: wires.length,
+    loose,
+    highs: highs.length,
+    tallest: Math.max(...nodes.map((n) => n.h)),
+    here,
+    flowing,
+    flowOn,
+    onNow,
+    ring: ring ? {
+      x: +ring.getAttribute("x"), y: +ring.getAttribute("y"),
+      w: +ring.getAttribute("width"), h: +ring.getAttribute("height"),
+    } : null,
+  };
+})()`;
+
+const geo = await cdp.evaluate(RULER);
+
+say(geo.highs > 1 && geo.tallest > 64,
+  "los nodos no miden todos lo mismo: el texto decide el alto",
+  "altos distintos=" + geo.highs + " el mas alto=" + geo.tallest);
+say(geo.worst === null, "y aun asi ninguno pisa a otro",
+  geo.worst ? geo.worst.a + " sobre " + geo.worst.b + " por " + geo.worst.ox + "x" + geo.worst.oy + "px"
+    : "sin solapes entre " + geo.nodes + " nodos");
+say(geo.loose === null,
+  "cada arista sale y llega al borde medido del nodo, no a uno supuesto",
+  geo.loose ? "una " + geo.loose.end + " suelta en " + geo.loose.x + "," + geo.loose.y
+    : "aristas=" + geo.wires);
+say(geo.here !== null, "hay un nodo que dice donde se esta",
+  geo.here ? geo.here.head : "ninguno");
+say(geo.ring !== null && geo.here !== null
+  && geo.ring.x < geo.here.x && geo.ring.y < geo.here.y
+  && geo.ring.x + geo.ring.w > geo.here.x + geo.here.w
+  && geo.ring.y + geo.ring.h > geo.here.y + geo.here.h,
+  "y lleva el cerco por fuera, rodeandolo entero",
+  geo.ring ? "cerco " + geo.ring.w + "x" + geo.ring.h + " sobre nodo " + geo.here.w + "x" + geo.here.h
+    : "sin cerco");
+say(geo.flowing === 1 && geo.onNow === 1,
+  "corre una sola arista, y es la que llega a donde se esta",
+  "animadas=" + geo.flowing + " de esas llegan ahi=" + geo.onNow);
+say(geo.flowOn === true,
+  "que sigue contando como camino encendido: la ruta pasa por ella");
+
+/* Y ahora el caso que se vio mal: otra naturaleza en vista previa. La rama pasa
+   a ser la de Oportunidad, con sus cinco pasos de texto largo. */
+await cdp.evaluate(`(() => {
+  const root = document.getElementById("wr-map");
+  [...root.querySelectorAll(".map__n--naturaleza")]
+    .find((n) => n.querySelector(".map__n__head").textContent === "Oportunidad").click();
+})()`);
+await wait(250);
+
+const look = await cdp.evaluate(RULER);
+
+say(look.ghosts === 5, "mirar Oportunidad sin tomarla trae sus cinco pasos en gris",
+  "en gris=" + look.ghosts);
+say(look.worst === null, "y tampoco ahi se pisa ningun nodo",
+  look.worst ? look.worst.a + " sobre " + look.worst.b + " por " + look.worst.ox + "x" + look.worst.oy + "px"
+    : "sin solapes entre " + look.nodes + " nodos");
+say(look.loose === null,
+  "ni se tuerce ninguna arista al cambiar de rama",
+  look.loose ? "una " + look.loose.end + " suelta en " + look.loose.x + "," + look.loose.y
+    : "aristas=" + look.wires);
+
+/* --- las dos animaciones corren de verdad, y se paran si asi se pide -------
+
+   Que la regla este escrita en el CSS no prueba que el navegador la este
+   corriendo: basta una propiedad mal puesta para que la clase este y la
+   animacion no. Se le pregunta al navegador por sus animaciones vivas.
+
+   Y se comprueba lo otro: con «prefers-reduced-motion» el cerco tiene que
+   quedarse quieto **pero seguir viendose**. Quitarlo dejaria el mapa sin la
+   unica marca de donde se esta, que es peor que la animacion que molestaba. */
+
+/* Soltar la vista previa: pulsar otra vez Oportunidad la suelta y el mapa
+   vuelve a la ruta tomada, que es la unica que tiene un «donde se esta». */
+await cdp.evaluate(`(() => {
+  const root = document.getElementById("wr-map");
+  [...root.querySelectorAll(".map__n--naturaleza")]
+    .find((n) => n.querySelector(".map__n__head").textContent === "Oportunidad").click();
+})()`);
+await wait(250);
+
+const back = await cdp.evaluate(RULER);
+say(back.here !== null && back.ghosts === 0,
+  "soltar la vista previa devuelve el mapa a la ruta tomada",
+  "donde se esta=" + (back.here ? back.here.head : "ninguno") + " en gris=" + back.ghosts);
+
+const moving = await cdp.evaluate(`(() => {
+  const map = document.getElementById("wr-map");
+  const ring = map.querySelector(".map__ants");
+  const flow = map.querySelector(".map__wire.is-flow");
+  const live = (el) => el ? el.getAnimations().map((a) => a.animationName + ":" + a.playState) : [];
+  return { ring: live(ring), flow: live(flow) };
+})()`);
+say(moving.ring.length === 1 && moving.ring[0] === "map-ants:running",
+  "el cerco de donde se esta corre: puntos que andan alrededor del nodo",
+  moving.ring.join(" ") || "quieto");
+say(moving.flow.length === 1 && moving.flow[0] === "map-flow:running",
+  "y la arista que llega ahi corre hacia el",
+  moving.flow.join(" ") || "quieta");
+
+await cdp.send("Emulation.setEmulatedMedia", {
+  features: [{ name: "prefers-reduced-motion", value: "reduce" }],
+});
+await wait(200);
+
+const still = await cdp.evaluate(`(() => {
+  const map = document.getElementById("wr-map");
+  const ring = map.querySelector(".map__ants");
+  const flow = map.querySelector(".map__wire.is-flow");
+  return {
+    ring: ring ? ring.getAnimations().length : -1,
+    flow: flow ? flow.getAnimations().length : -1,
+    seen: ring ? getComputedStyle(ring).strokeWidth : null,
+    faded: ring ? getComputedStyle(ring).opacity : null,
+  };
+})()`);
+say(still.ring === 0 && still.flow === 0,
+  "a quien le molesta el movimiento se le para: ni el cerco ni la arista andan",
+  "cerco=" + still.ring + " arista=" + still.flow);
+say(still.seen !== null && still.seen !== "0px" && still.faded !== "0",
+  "pero el cerco se sigue viendo: sin el nadie sabria donde esta",
+  "grosor=" + still.seen + " opacidad=" + still.faded);
+
+await cdp.send("Emulation.setEmulatedMedia", { features: [] });
 
 console.log("ruta de Indagar: " + JSON.stringify({ bloques: doc.made, nodos: map.nodes }));
 
