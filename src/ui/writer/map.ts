@@ -828,6 +828,39 @@ export function mountMap(options: MapOptions): RouteMap {
     scaleAt(zoom * Math.exp(-step * 0.0016), event.clientX, event.clientY);
   }, { passive: false });
 
+  /**
+   * Al cambiar de tamaño la ventana, que siga habiendo algo que mirar.
+   *
+   * El encaje sólo se hacía al abrir. Después, estrechar la ventana dejaba la
+   * escala y el desplazamiento de antes, y el grafo podía acabar entero fuera
+   * del escenario: el mapa abierto y nada dentro. No se rehace el encaje —si
+   * alguien se acercó a leer un nodo, ese acercamiento es suyo— sino que se
+   * ata el desplazamiento a que el lienzo siga asomando.
+   */
+  function clampPan(): void {
+    const box = stage.getBoundingClientRect();
+    if (box.width < 40) return;
+    const wide = field.w * zoom;
+    const high = field.h * zoom;
+    // Cuánto tiene que seguir asomando: un trozo de verdad, no un píxel.
+    const keep = 80;
+    tx = wide <= box.width
+      ? (box.width - wide) / 2
+      : Math.min(Math.max(tx, box.width - wide - keep), keep);
+    ty = high <= box.height
+      ? (box.height - high) / 2
+      : Math.min(Math.max(ty, box.height - high - keep), keep);
+    place();
+  }
+
+  /* Cerrado no se mide: el escenario no tiene tamaño y la cuenta saldría con
+     las medidas de la pantalla anterior. Se espera un fotograma porque al
+     llegar el aviso la página todavía no ha recolocado nada. */
+  window.addEventListener("resize", () => {
+    if (root.hidden) return;
+    requestAnimationFrame(() => { clampPan(); });
+  });
+
   /* --- abrir, cerrar ------------------------------------------------------ */
 
   function open(): void {

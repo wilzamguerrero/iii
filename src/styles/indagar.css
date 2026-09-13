@@ -270,6 +270,14 @@
   inset: 0;
   z-index: 18;
   display: grid;
+  /* Filas **y** columna. Sin la columna, el grid usa una implícita de `auto`,
+     que se estira hasta el `max-content` de lo que lleva dentro: el lienzo
+     mide más de dos mil píxeles fijos, así que el mapa era igual de ancho a
+     cualquier ancho de ventana y el panel del lado caía fuera de la pantalla
+     —y con él el zoom y la X, que se van con la barra—. `minmax(0, 1fr)` es
+     lo que ata la columna a lo que mide la pantalla y deja que el escenario
+     recorte su lienzo, que es para lo que se arrastra y se acerca. */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto auto minmax(0, 1fr);
   background: var(--paper);
   color: var(--ink);
@@ -286,11 +294,20 @@
   border-bottom: 1px solid var(--ink-line);
 }
 
+/* El título se encoge y se corta antes de empujar nada. Era `0 0 auto` y no
+   cedía un píxel, así que en una ventana estrecha lo que se salía por el borde
+   era el zoom y la X —y un mapa que no se puede cerrar es una trampa—. El orden
+   de lo que sobra está pensado: primero el aforismo, luego el título, nunca los
+   mandos. */
 .map__title {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
   font-size: 0.72rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* El aforismo de la lámina, en el mismo sitio donde la lámina lo pone: debajo
@@ -1138,6 +1155,18 @@ button.map__n:focus-visible { outline: 1px solid var(--ink); outline-offset: 2px
 
   .map__deal { flex-direction: column; align-items: stretch; gap: 0.5rem; }
   .map__deal__acts { justify-content: flex-start; }
+}
+
+@media (max-width: 560px) {
+  /* El título entero no cabe y cortado a cuatro letras no dice nada: se va, y
+     queda el icono, que es la misma marca con la que se abrió el mapa. Lo que
+     no se va nunca es el zoom ni la X. */
+  .map__title { display: none; }
+
+  .map__bar { gap: 0.45rem; padding: 0.5rem 0.55rem; }
+
+  /* El número del zoom en su sitio más corto: sigue cabiendo «100%». */
+  .map__zn { min-width: 2.6rem; font-size: 0.68rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {

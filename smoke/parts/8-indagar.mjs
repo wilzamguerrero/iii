@@ -653,6 +653,92 @@ say(still.seen !== null && still.seen !== "0px" && still.faded !== "0",
 
 await cdp.send("Emulation.setEmulatedMedia", { features: [] });
 
+/* --- el mapa cabe en la ventana: el panel, el zoom y la X a cualquier ancho ---
+
+   Lo que se comprueba aquí es lo que se veía mal: `.map` era un grid con filas
+   y sin columna, así que su columna implícita valia `auto` y se estiraba hasta
+   el `max-content` de lo que llevaba dentro —el lienzo, que mide más de dos mil
+   píxeles fijos—. El mapa era igual de ancho a cualquier ancho de ventana, y el
+   panel del lado, el zoom y la X vivían fuera de la pantalla. Las tres media
+   queries que ya existían no servían de nada porque la columna nunca se
+   estrechaba.
+
+   Se mide con la ventana emulada, no con la de verdad: el navegador del humo
+   nace a 1400 y así se recorre el intervalo entero sin tocarlo. */
+
+const ANCHOS = [1400, 1100, 900, 721, 560, 480, 360];
+
+for (const w of ANCHOS) {
+  await cdp.send("Emulation.setDeviceMetricsOverride", {
+    width: w, height: 860, deviceScaleFactor: 1, mobile: false,
+  });
+  await wait(240);
+
+  const cabe = await cdp.evaluate(`(() => {
+    const root = document.getElementById("wr-map");
+    const bar = root.querySelector(".map__bar");
+    const side = root.querySelector(".map__side");
+    const vw = window.innerWidth;
+    const box = (el) => {
+      const r = el.getBoundingClientRect();
+      return { l: Math.round(r.left), r: Math.round(r.right), w: Math.round(r.width) };
+    };
+    /* Lo que se ha escondido a propósito no cuenta: el aforismo por debajo de
+       980 y el título por debajo de 560. Lo que ocupa sitio, sí. */
+    const fuera = [...bar.children]
+      .filter((k) => k.getBoundingClientRect().width > 0.5)
+      .filter((k) => {
+        const r = k.getBoundingClientRect();
+        return r.left < -0.5 || r.right > vw + 0.5;
+      })
+      .map((k) => k.className || k.tagName);
+    return {
+      vw,
+      over: root.scrollWidth - root.clientWidth,
+      side: box(side),
+      zoom: box(root.querySelector(".map__zoom")),
+      x: box(root.querySelector(".map__x")),
+      fuera,
+    };
+  })()`);
+
+  say(cabe.over === 0,
+    "a " + w + " el mapa no se sale de la ventana por el lado",
+    "sobra=" + cabe.over);
+  say(cabe.side.l >= -0.5 && cabe.side.r <= cabe.vw + 0.5 && cabe.side.w > 0,
+    "a " + w + " el panel del lado se ve entero",
+    "panel=" + cabe.side.w + "@" + cabe.side.l + ".." + cabe.side.r);
+  say(cabe.zoom.w > 0 && cabe.zoom.r <= cabe.vw + 0.5 && cabe.zoom.l >= -0.5,
+    "a " + w + " el zoom sigue a la vista",
+    "zoom=" + cabe.zoom.l + ".." + cabe.zoom.r);
+  say(cabe.x.w > 0 && cabe.x.r <= cabe.vw + 0.5 && cabe.x.l >= -0.5,
+    "a " + w + " la X sigue a la vista: un mapa que no se cierra es una trampa",
+    "x=" + cabe.x.l + ".." + cabe.x.r);
+  say(cabe.fuera.length === 0,
+    "a " + w + " nada de la barra se escapa por un borde",
+    cabe.fuera.join(" ") || "todo dentro");
+}
+
+/* Estrechar la ventana con el mapa abierto deja algo que mirar. Antes el encaje
+   sólo se hacía al abrir: después, el grafo se quedaba con la escala y el
+   desplazamiento de una ventana que ya no existía y podía irse entero fuera. */
+const asoma = await cdp.evaluate(`(() => {
+  const root = document.getElementById("wr-map");
+  const stage = root.querySelector(".map__stage");
+  const canvas = root.querySelector(".map__canvas");
+  const a = stage.getBoundingClientRect();
+  const b = canvas.getBoundingClientRect();
+  const ancho = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+  const alto = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+  return { ancho: Math.round(ancho), alto: Math.round(alto) };
+})()`);
+say(asoma.ancho > 40 && asoma.alto > 40,
+  "tras estrechar la ventana el lienzo sigue asomando por el escenario",
+  "se cruzan " + asoma.ancho + "x" + asoma.alto);
+
+await cdp.send("Emulation.clearDeviceMetricsOverride");
+await wait(200);
+
 console.log("ruta de Indagar: " + JSON.stringify({ bloques: doc.made, nodos: map.nodes }));
 
 cdp.close();
