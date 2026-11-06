@@ -30,6 +30,7 @@
  */
 
 import type { ApiRequest, ApiResponse } from "./_types.ts";
+import { ocServeAvailable } from "./_oc_serve.ts";
 
 /** Los proveedores que trae la aplicación. Los demás los añade la persona. */
 export type BuiltinId = "openrouter" | "nvidia" | "github" | "opencode" | "freepi";
@@ -506,6 +507,19 @@ export function readTarget(req: ApiRequest, provider: unknown): TargetResult {
     return { ok: false, code: "unknown_provider", message: "Proveedor no reconocido." };
   }
   const spec = PROVIDERS[provider as BuiltinId];
+
+  // OpenCode necesita su binario, y un despliegue no puede ejecutarlo: en
+  // Cloudflare un Worker no lanza procesos y no tiene disco donde dejarlo. Se
+  // dice aquí, con el motivo, en vez de dejar que la primera petición falle con
+  // un error de la red del proveedor que no explica nada.
+  if (spec.id === "opencode" && !ocServeAvailable()) {
+    return {
+      ok: false,
+      code: "provider_unavailable",
+      message: "OpenCode necesita su binario y no puede ejecutarse en este despliegue. "
+        + "Funciona en local; en la nube usa otro proveedor.",
+    };
+  }
 
   return {
     ok: true,

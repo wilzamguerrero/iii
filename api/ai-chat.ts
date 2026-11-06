@@ -23,6 +23,10 @@ import {
 } from "./_opencode.ts";
 import { freepiHeaders, isFreePi, pipeFreePiStream, replyText, resetSession as resetFreePiSession } from "./_freepi.ts";
 import { ocServeChat, ocServeUsable, OcError } from "./_oc_serve.ts";
+import {
+  allowedModelsFromError, copilotAutoModel, copilotHeaders, copilotPlan, DEFAULT_COPILOT_HOST,
+  integratorFromError, resolveAutoModel,
+} from "./_copilot.ts";
 
 /** Topes de cordura. No son de seguridad de la clave, son de no mandar un libro. */
 const MAX_MESSAGES = 80;
@@ -134,11 +138,29 @@ const handler: ApiHandler = async (req, res) => {
   }
   const stream = body.stream === true;
 
+  // «Auto» en Copilot no es un modelo: es el nombre que enseña el selector. La
+  // API no lo conoce y contesta `400 model_not_supported` en el primer mensaje.
+  // VS Code lo resuelve preguntando a `POST /auto` con el propio mensaje, y eso
+  // se hace aquí igual: la elección depende del texto, no del catálogo.
+  const copilotBase = target.id === "github" ? await copilotPlan(key ?? "") : null;
+  const targetHost = copilotBase?.host ?? DEFAULT_COPILOT_HOST;
+
+  // OpenCode manda el `gho_` de GitHub tal cual a `/chat/completions`, sin
+  // canjearlo, y es el cliente que funciona. Canjearlo por `/v2/token` fue el
+  // otro error: ese token queda atado al integrador que GitHub decida al
+  // emitirlo, y después la cabecera ya no puede corregirlo.
+  const lastUserText = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
+  const hasImage = messages.some((m) => Array.isArray(m.content));
+  const copilotModel = target.id === "github" && model === "auto"
+    ? (key ? await copilotAutoModel(key, targetHost, lastUserText, hasImage) : null)
+      ?? resolveAutoModel([])
+    : model;
+
   // El cuerpo se traduce aquí cuando el destino habla el formato de Anthropic. El
   // cliente manda siempre el de OpenAI: la diferencia no sube hasta el navegador.
   const payload: Record<string, unknown> = target.format === "anthropic"
-    ? toAnthropicBody(model, messages, stream)
-    : { model, messages, max_tokens: MAX_TOKENS, ...(stream ? { stream: true } : {}) };
+    ? toAnthropicBody(copilotModel, messages, stream)
+    : { model: copilotModel, messages, max_tokens: MAX_TOKENS, ...(stream ? { stream: true } : {}) };
 
   // OpenCode no acepta un cuerpo compatible con OpenAI: exige la forma de su
   // propio cliente y, si no la tiene, contesta `429 FreeUsageLimitError` —que no
@@ -212,9 +234,39 @@ const handler: ApiHandler = async (req, res) => {
   const freepi = isFreePi(targetUrl);
   const freepiExtra = freepi ? await freepiHeaders(key) : null;
 
+  // Copilot atiende a cada cuenta en el host que declara su plan; el genérico no
+  // siempre sirve (una cuenta individual puede vivir en `api.individual…`). Se
+  // conserva la ruta de cada URL y sólo se cambia el origen.
+  const copilot = copilotBase;
+  const chatUrls = copilot && copilot.host !== DEFAULT_COPILOT_HOST
+    ? target.chatUrls.map((url) => {
+      try {
+        const parsed = new URL(url);
+        const host = new URL(copilot.host);
+        parsed.protocol = host.protocol;
+        parsed.host = host.host;
+        return parsed.toString();
+      } catch { return url; }
+    })
+    : target.chatUrls;
+
+  // La identidad con la que GitHub reconoce al cliente. Sin ella contesta
+  // `The requested model is not available for integrator "opencode"`: no sabe
+  // quién llama y deduce un integrador por defecto que no tiene ese modelo. Va
+  // al final de las cabeceras para que no la pise la tabla del proveedor, que sí
+  // la sobrescribía.
+  const copilotExtra = target.id === "github" ? copilotHeaders() : {};
+
+  // Y el token, que también hay que cambiar. El `gho_` de GitHub no es lo que
+  // espera la API de inferencia: se canjea por uno corto de Copilot arriba, y es
+  // en ese canje donde GitHub fija el integrador. Mandar el `gho_` crudo hace
+  // que la cuenta se atribuya a un integrador con menos modelos, y la cabecera de
+  // arriba ya no sirve para corregirlo. Ver `_copilot.ts`.
+
+
   /** Una llamada al proveedor, con la identidad de ahora mismo. */
   const call = async (body: Record<string, unknown>): Promise<Response> =>
-    fetchWithFallback(target.chatUrls, {
+    fetchWithFallback(chatUrls, {
       method: "POST",
       headers: {
         ...authHeaders(key, target),
@@ -228,6 +280,7 @@ const handler: ApiHandler = async (req, res) => {
         // rechaza antes. En OpenCode van ya limpias y con la identidad puesta.
         ...openCodeExtras(),
         ...freepiExtra,
+        ...copilotExtra,
       },
       body: JSON.stringify(body),
     }, {
@@ -267,6 +320,33 @@ const handler: ApiHandler = async (req, res) => {
             `(intento ${rotation + 1}/${OC_MAX_ROTATIONS}); el cuerpo ya cumplía la forma.`,
           );
           break;
+        }
+      }
+    }
+
+    // ── Copilot: el integrador no tiene ese modelo ────────────────────
+    //
+    // La lista de modelos la decide el integrador al que GitHub atribuye la
+    // sesión, y ese integrador lo fija la aplicación con la que se autorizó, no
+    // esta petición. Cambiar la cabecera no lo arregla: manda el token.
+    //
+    // Pero GitHub dice en el propio error qué modelos sí tiene. Cuando eso pasa
+    // se reintenta una vez con uno de los suyos, en vez de devolver un 400 que la
+    // persona no puede resolver desde los ajustes.
+    if (copilot && upstream.status === 400) {
+      const text = await upstream.clone().text().catch(() => "");
+      const allowed = allowedModelsFromError(text);
+      const integrator = integratorFromError(text);
+      const replacement = allowed?.find((id) => id !== copilotModel);
+
+      if (allowed && replacement) {
+        const second = await call({ ...payload, model: replacement });
+        if (second.ok) {
+          console.warn(
+            `[ai-chat] copilot: «${copilotModel}» no está en el integrador ` +
+            `«${integrator ?? "?"}»; se usó «${replacement}» de los ${allowed.length} que sí tiene.`,
+          );
+          upstream = second;
         }
       }
     }

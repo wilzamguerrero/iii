@@ -24,6 +24,7 @@ import {
 import { registryByApi, registryProvider, type RegistryProvider } from "./_registry.ts";
 import { isOpenCode, openCodeHeaders, resolveOrgId, stripForwardHeaders } from "./_opencode.ts";
 import { freepiCatalog, freepiHeaders, isFreePi } from "./_freepi.ts";
+import { autoOnlyModels, copilotPlan, usableModels } from "./_copilot.ts";
 
 export interface AiModel {
   id: string;
@@ -217,6 +218,10 @@ const handler: ApiHandler = async (req, res) => {
   // defecto entre ellos— y el camino `/zen` pide además la sesión. Sin esto, el
   // selector de modelos se queda vacío aunque la clave sea buena.
   const opencode = isOpenCode(target.modelUrls[0] ?? "");
+  // GitHub Copilot anuncia en `/models` todo lo que existe, no lo que el plan
+  // incluye: mandar uno de pago contesta `model_not_supported`. El plan, y el
+  // host que atiende a esta cuenta, se preguntan antes de creerse la lista.
+  const copilot = target.id === "github" ? await copilotPlan(key ?? "") : null;
   // free-pi no tiene `/v1/models` —da 404—: su catálogo sale de `/client-version`,
   // el mismo que usa el CLI para pintar el selector. Además hay que anunciar la
   // identidad, como en el chat (`_freepi.ts`).
@@ -234,6 +239,11 @@ const handler: ApiHandler = async (req, res) => {
   };
 
   try {
+    // `autoOnly` se deja para el final, no para aquí. Un plan sin elección lo
+    // parece por su nombre, pero quien decide de verdad es el integrador: esta
+    // cuenta informa un plan gratuito y aun así tiene cuatro modelos usables.
+    // Cortar por el nombre dejaba el selector en «auto» cuando había más.
+
     const upstream = await fetchWithFallback(target.modelUrls, { headers }, {
       noRedirect: target.custom,
       // Quince segundos por destino: es un catálogo, y quien está mirando los
@@ -264,8 +274,66 @@ const handler: ApiHandler = async (req, res) => {
         if (model) models.push(enrich(model, reg));
       }
     }
+
+    // Copilot anuncia en `/models` todo lo que existe, pero el integrador de esta
+    // cuenta sólo atiende a una parte, y cualquiera fuera de ella contesta `400`
+    // al primer mensaje. Se comprueba de verdad cuáles funcionan: la lista del
+    // selector pasa a ser la de los que responden, no la de los que se anuncian.
+    let dropped = 0;
+    let probe = "no se preguntó";
+    if (copilot && key && models.length > 0) {
+      const probed = await usableModels(
+        key,
+        copilot.host,
+        models.map((model) => model.id),
+      );
+      // `null` es «no se supo»: se deja el catálogo como estaba en vez de
+      // vaciarlo por un fallo de red o de cuota.
+      if (probed) {
+        const usable = new Set(probed);
+        dropped = models.filter((model) => !usable.has(model.id)).length;
+        models = models.filter((model) => usable.has(model.id));
+        probe = `dijo ${probed.length}`;
+      } else {
+        probe = "sin lista";
+      }
+    }
+
+    // Un catálogo vacío no es un catálogo: Copilot contesta 200 con `data: []` a
+    // las cuentas cuyo integrador no anuncia nada, y entonces la única lista que
+    // existe es la que la sonda saca del error. Se usa esa, que es la de verdad.
+    if (copilot && key && models.length === 0) {
+      const probed = await usableModels(key, copilot.host, []);
+      probe = probed ? `rescató ${probed.length}` : "sin lista";
+      if (probed) {
+        models = probed.map((id) => enrich({ id, name: id, publisher: "Copilot" }, reg));
+      }
+    }
     let source = "provider";
-    let notice = "";
+    let notice = dropped > 0
+      ? `${dropped} modelo${dropped === 1 ? "" : "s"} no están disponibles para tu sesión de Copilot y se han ocultado.`
+      : "";
+
+    // Si tras probarlos no queda ninguno, es que este integrador no tiene nada
+    // que ofrecer a `/chat/completions` salvo su propia elección. Ahí sí se cae a
+    // `auto`, que es lo único que puede funcionar.
+    if (copilot && models.length === 0) {
+      const only = autoOnlyModels();
+      res.status(200).json({
+        provider: target.id,
+        source: "provider",
+        defaultModel: only[0]?.id ?? "auto",
+        models: only,
+        // El diagnóstico se cuenta: sin él, «sólo hay uno» puede ser que el
+        // catálogo venga vacío, que la sonda no devuelva lista o que el plan
+        // venga marcado como sin elección. Son tres problemas distintos y desde
+        // fuera se ven igual.
+        notice: `Tu sesión de Copilot elige el modelo por ti, así que sólo hay uno.`
+          + ` (plan=${copilot.plan || "?"}, catálogo=${upstream.status},`
+          + ` leídos=${listOf(payload).length}, sonda=${probe})`,
+      });
+      return;
+    }
 
     // El registro es la red de seguridad, no la primera opción: sólo entra cuando
     // el proveedor no contestó o no dio ningún modelo. Y se dice de dónde salió la
