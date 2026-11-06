@@ -32,7 +32,27 @@ export interface AiConfig {
   custom: CustomProvider[];
 }
 
-const EMPTY: AiConfig = { provider: "openrouter", models: {}, keys: {}, custom: [] };
+/**
+ * El proveedor con el que arranca la aplicación: OpenCode.
+ *
+ * Es el que tiene modelos gratuitos de verdad y responde sin que nadie tenga
+ * que registrarse en ningún sitio: su nivel gratuito funciona con la clave
+ * `public`. Se pone aquí y no en el servidor porque es una preferencia de la
+ * persona: si elige otro, se recuerda el suyo.
+ */
+const DEFAULT_PROVIDER: ProviderId = "opencode";
+
+/**
+ * La configuración de partida. Sin claves a propósito: el nivel gratuito de
+ * OpenCode no necesita ninguna, y guardar `public` como si fuera una clave hacía
+ * que el botón «Quitar» no tuviera nada que quitar.
+ */
+const EMPTY: AiConfig = {
+  provider: DEFAULT_PROVIDER,
+  models: {},
+  keys: {},
+  custom: [],
+};
 
 /** Un identificador aceptable: uno de los de casa o `custom:` y un nombre corto. */
 function isProvider(value: unknown): value is ProviderId {
@@ -322,10 +342,30 @@ function pickFlags(value: unknown): Partial<Record<BuiltinId, boolean>> {
  * Cierto si la petición va a poder autenticarse: clave aquí o en el servidor. Un
  * proveedor propio puede no necesitar ninguna —Ollama o LM Studio no la piden—,
  * así que basta con tenerlo dado de alta.
+ *
+ * Los niveles gratuitos que no tienen credencial —OpenCode con `public`— cuentan
+ * como que sí: exigirles una clave era pedir algo que no existe y dejar el
+ * proveedor inservible por un requisito inventado.
  */
 export function hasCredential(provider: ProviderId = activeProvider()): boolean {
   if (isCustom(provider)) return customProvider(provider) !== null;
+  if (isBuiltin(provider) && PROVIDERS[provider].freeTier) return true;
   return Boolean(browserKey(provider) ?? (isBuiltin(provider) && serverKeys.get()?.[provider]));
+}
+
+/**
+ * La clave con la que se hablará con ese proveedor, si hay alguna.
+ *
+ * El orden es: la que puso la persona, si no la del nivel gratuito (`public` en
+ * OpenCode), y si no nada —el servidor pondrá la suya de su entorno—. Se expone
+ * porque el campo de la clave tiene que poder enseñar cuál se está usando sin
+ * que nadie tenga que escribirla.
+ */
+export function effectiveKey(provider: ProviderId = activeProvider()): string {
+  const own = browserKey(provider);
+  if (own) return own;
+  if (isBuiltin(provider)) return PROVIDERS[provider].fallbackKey ?? "";
+  return "";
 }
 
 /** Si el usuario cambia los ajustes en otra pestaña, esta se entera. */

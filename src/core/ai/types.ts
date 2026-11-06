@@ -10,9 +10,11 @@
  */
 
 /** Los tres que trae la aplicación. */
-export type BuiltinId = "openrouter" | "nvidia" | "github";
+export type BuiltinId = "openrouter" | "nvidia" | "github" | "opencode" | "freepi";
 
-export const BUILTIN_IDS: readonly BuiltinId[] = ["openrouter", "nvidia", "github"];
+export const BUILTIN_IDS: readonly BuiltinId[] = [
+  "openrouter", "nvidia", "github", "opencode", "freepi",
+];
 
 /** Los proveedores propios se identifican así, para no chocar con los de casa. */
 export const CUSTOM_PREFIX = "custom:";
@@ -78,7 +80,7 @@ export interface ProviderInfo {
    * `device` es el alta por dispositivo de GitHub (aparece un código y se
    * escribe en github.com).
    */
-  auth: "key" | "device";
+  auth: "key" | "device" | "free";
   /** Una frase para los ajustes del asistente: qué es esto y qué cuesta. */
   hint: string;
   /** Dónde se saca la clave, para no obligar a buscarla. */
@@ -88,6 +90,20 @@ export interface ProviderInfo {
    * el cliente para no pedir una lista que va a volver como 401.
    */
   publicCatalog?: boolean;
+  /**
+   * La clave que se usa si la persona no pone ninguna.
+   *
+   * Existe porque hay niveles gratuitos que no tienen credencial: OpenCode
+   * atiende con la cadena literal `public`. Sin esto la aplicación pedía una
+   * clave que no existe, y el proveedor quedaba inservible por un requisito
+   * inventado. Si la persona escribe la suya, manda la suya.
+   */
+  fallbackKey?: string;
+  /**
+   * Cierto cuando el nivel gratuito no necesita que nadie inicie sesión. Sirve
+   * para no enseñar el campo de la clave como si fuera obligatorio.
+   */
+  freeTier?: boolean;
 }
 
 export const PROVIDERS: Readonly<Record<BuiltinId, ProviderInfo>> = {
@@ -111,6 +127,27 @@ export const PROVIDERS: Readonly<Record<BuiltinId, ProviderInfo>> = {
     label: "GitHub Copilot",
     auth: "device",
     hint: "Usa tu cuenta de GitHub. Sin Copilot activo queda el catálogo de GitHub Models.",
+  },
+  opencode: {
+    id: "opencode",
+    label: "OpenCode",
+    // No hay nada que pegar: su nivel gratuito atiende con la cadena `public`.
+    // Se habla con el binario `opencode serve`, que es lo único que su puerta
+    // acepta; ver `api/_oc_serve.ts`.
+    auth: "free",
+    hint: "Nivel gratuito, sin clave ni cuenta: eliges el modelo y ya. La cuota " +
+      "se cuenta por IP. Necesita el binario `opencode` instalado.",
+    keyUrl: "https://opencode.ai/auth",
+    fallbackKey: "public",
+    freeTier: true,
+  },
+  freepi: {
+    id: "freepi",
+    label: "free-pi",
+    auth: "key",
+    hint: "El backend del CLI ad-supported free-pi. No es una clave: es el token " +
+      "del login con GitHub, que caduca a los ~90 días. Admite 4 sesiones a la vez.",
+    keyUrl: "https://freepi.ai",
   },
 };
 

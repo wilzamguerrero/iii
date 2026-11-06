@@ -9,7 +9,13 @@
 
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap" />
+<!-- Las tres familias en un enlace. Instrument Serif es la de «sobrio»; Outfit y Plus
+     Jakarta Sans son las de «vivo». Van juntas y no en tres enlaces porque es una sola
+     hoja y una sola conexión; y estar declaradas no es descargarlas: el navegador sólo
+     pide el archivo de una familia cuando algo la usa de verdad, así que en «sobrio» las
+     dos de «vivo» no pesan nada. Los pesos van como rango —`300..800`— porque las dos son
+     variables: un archivo que cubre todo el rango pesa menos que cuatro pesos sueltos. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Outfit:wght@300..800&family=Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800&display=swap" />
 <link rel="stylesheet" href="./src/styles/app.css" />
 
 <!-- El tema, antes de pintar. Si se dejara sólo a core/state/theme.ts —un módulo,
@@ -25,6 +31,19 @@
       if (t === 'auto') t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
       document.documentElement.dataset.theme = t;
     } catch (e) { document.documentElement.dataset.theme = 'light'; }
+  })();
+</script>
+
+<!-- El estilo, por lo mismo y del mismo modo: cambia las fuentes y el papel, así que
+     llegar diferido se vería. Es un eje aparte del tema —claro/oscuro por un lado,
+     sobrio/vivo por otro—, y por eso son dos claves y dos atributos. Sin nada guardado,
+     sobrio: la plataforma se diseñó así. Lo gobierna core/state/skin.ts. -->
+<script>
+  (function () {
+    try {
+      var k = localStorage.getItem('3i.skin');
+      document.documentElement.dataset.skin = k === 'vivo' ? 'vivo' : 'sobrio';
+    } catch (e) { document.documentElement.dataset.skin = 'sobrio'; }
   })();
 </script>
 

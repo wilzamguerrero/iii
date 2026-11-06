@@ -5,6 +5,7 @@ import { closeSession, session } from "../../core/persist/session.ts";
 import { beginNotion, chooseRoot } from "./workspace.ts";
 import { mountAiSettings } from "../assistant/settings.ts";
 import { setTheme, theme, type ThemeChoice } from "../../core/state/theme.ts";
+import { setSkin, skin, type SkinChoice } from "../../core/state/skin.ts";
 
 /**
  * La bandeja: el extremo derecho de la franja.
@@ -335,14 +336,52 @@ export function mountTray(options: TrayOptions): Tray {
   markSeg();
   theme.subscribe(markSeg);
 
-  // Se arma una vez: no depende de nada que cambie por debajo, y el subrayado lo
-  // lleva `markSeg` desde el propio `theme`.
+  /* El otro eje: el estilo. Va aparte del tema y no como dos opciones más de la
+     misma tira, porque no son la misma pregunta —uno es la luz y el otro la
+     forma— y porque juntarlos perdería «automático»: no hay manera de seguir al
+     sistema si la elección guardada lleva dentro también la tipografía. Cruzados
+     dan cuatro temas con dos tiras de dos y tres botones. */
+  const SKINS: readonly { id: SkinChoice; label: string }[] = [
+    { id: "sobrio", label: "Sobrio" },
+    { id: "vivo", label: "Vivo" },
+  ];
+
+  const skinSeg = el(
+    "div",
+    { class: "seg", attrs: { role: "group", "aria-label": "Estilo" } },
+    SKINS.map(({ id, label }) => el("button", {
+      class: "seg__btn",
+      text: label,
+      attrs: { type: "button", "aria-pressed": "false", "data-id": id },
+      on: { click: () => { setSkin(id); } },
+    })),
+  );
+
+  function markSkin(): void {
+    const now = skin.get();
+    for (const button of skinSeg.querySelectorAll<HTMLButtonElement>(".seg__btn")) {
+      button.setAttribute("aria-pressed", button.dataset.id === now ? "true" : "false");
+    }
+  }
+
+  markSkin();
+  skin.subscribe(markSkin);
+
+  // Se arma una vez: no depende de nada que cambie por debajo, y el subrayado de
+  // cada tira lo lleva su propio `mark*` desde `theme` y `skin`.
   render(sys.body,
     el("p", { class: "pnl__lead", text: "Tema" }),
     seg,
     el("p", {
       class: "pnl__note",
       text: "«Automático» sigue al del sistema y cambia con él sin recargar.",
+    }),
+    el("p", { class: "pnl__lead pnl__lead--sep", text: "Estilo" }),
+    skinSeg,
+    el("p", {
+      class: "pnl__note",
+      text: "«Vivo» cambia las letras, redondea las formas y da a cada fase del " +
+        "método su gama de color.",
     }),
     el("p", {
       class: "pnl__note pnl__note--sep",

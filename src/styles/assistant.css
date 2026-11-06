@@ -49,7 +49,7 @@
 .ai-handle:hover .ori__f5 { transform: translate(-1.6px, 1.2px); }
 .ai-handle:active .ori { transform: rotate(-4deg) scale(0.93); transition-duration: 0.12s; }
 
-.ai-handle:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: 4px; border-radius: 4px; }
+.ai-handle:focus-visible { outline: 1px solid var(--ink-faint); outline-offset: 4px; border-radius: var(--r-soft); }
 
 /* Abierto: el papel se inclina y se queda así, para que se vea cuál es la
    ventana que está abierta si hay varias cosas en pantalla. */

@@ -26,6 +26,21 @@ export async function attach(port = 9222) {
       else res(msg.result);
       return;
     }
+    /* Un diálogo del navegador —el «¿seguro que quieres salir?» que la hoja
+       arma cuando hay texto sin mandar— hay que contestarlo, y tiene que
+       contestarlo quien esté enchufado: en cuanto un cliente hace `Page.enable`
+       Chrome deja de resolverlos solo y se queda esperando. Sin esto, el primer
+       `Page.navigate` con cambios sin guardar congela el renderer y todo lo que
+       venga después —incluido el `attach` de la parte siguiente— se cuelga sin
+       decir nada. Se acepta, que es lo que hace falta para poder recargar. */
+    if (msg.method === "Page.javascriptDialogOpening") {
+      id += 1;
+      ws.send(JSON.stringify({
+        id, method: "Page.handleJavaScriptDialog", params: { accept: true },
+      }));
+      logs.push(`[dialogo] ${msg.params.type}: ${msg.params.message || "(sin texto)"}`);
+      return;
+    }
     if (msg.method === "Runtime.consoleAPICalled") {
       const text = (msg.params.args ?? []).map((a) => a.value ?? a.description ?? a.type).join(" ");
       logs.push(`[${msg.params.type}] ${text}`);

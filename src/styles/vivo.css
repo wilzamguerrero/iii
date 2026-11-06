@@ -1,0 +1,258 @@
+/* ============================================================
+   vivo — el estilo con color, por fases
+   ============================================================
+
+   La otra mitad del eje `data-skin`. La primera —sobrio— no
+   necesita archivo: es la plataforma tal como está escrita en
+   las otras diez hojas. Esta sí, porque «vivo» no es sólo otra
+   tabla de color: cambia la forma de algunas piezas, cruza las
+   dos tipografías en la hoja y añade fondos que no existen en
+   sobrio.
+
+   Va al final de `app.css` a propósito: así cada regla de aquí
+   gana a la que corrige sin subir especificidad a mano ni
+   escribir un solo `!important`.
+
+   **Aquí no se declara ningún color.** Todo sale de `tokens.css`
+   —`--ph-a…d` son los cuatro tonos de la fase, y `--line-*`,
+   `--soft-*`, `--say-*`, `--blob-*` sus derivados—, y lo que
+   mueve la gama es `data-phase` en el <html>. Por eso este
+   archivo no menciona ninguna fase: no sabe en cuál está.
+
+   Casi todo lo demás —las esquinas redondas de los paneles, las
+   fuentes de la interfaz, el gris de Adobe— no está aquí porque
+   no hace falta: son tokens, y cambiarlos ya los cambió.
+   ============================================================ */
+
+/* --- la voz del documento ---------------------------------------------------
+
+   En sobrio la hoja va en serif y sus títulos en la de interfaz. Aquí se
+   cruzan: la letra de titular de este estilo es una geométrica, y un trabajo
+   de grado entero leído en una geométrica de titular cansa a la segunda
+   página. Así que el cuerpo baja a la humanista —que es la que está hecha
+   para párrafo largo— y son los títulos los que suben a la geométrica, en
+   negrita y apretados, que es de donde viene el aire de la lámina. */
+
+[data-skin="vivo"] .vis,
+[data-skin="vivo"] .doc { font-family: var(--sans); }
+
+[data-skin="vivo"] .vis > h2,
+[data-skin="vivo"] .vis > h3,
+[data-skin="vivo"] .vis > h4,
+[data-skin="vivo"] .doc__h {
+  font-family: var(--serif);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* El énfasis. En sobrio se distingue por la cursiva de la serif; sin cursiva
+   —la geométrica no tiene una de verdad— haría falta otra cosa, y el peso
+   solo no basta cuando alrededor ya hay pesos distintos. El color de la fase
+   sí: es además exactamente lo que hace la lámina con la palabra que importa. */
+[data-skin="vivo"] .phrase em,
+[data-skin="vivo"] .intent__title em {
+  font-weight: 600;
+  color: var(--say-a);
+}
+
+/* --- las formas del fondo de la hoja ----------------------------------------
+
+   Color plano, sin degradado: son discos de un solo color, como los de la
+   lámina. Se dibujan con `radial-gradient` porque es la única forma de poner un
+   círculo en un fondo, pero con **parada dura** —el color llega entero hasta el
+   borde y ahí se corta—, así que de degradado no tienen nada: el segundo tope
+   está en el mismo sitio que el primero.
+
+   Van en el fondo de `.wr__paper` y no en un elemento aparte, y eso resuelve
+   tres cosas de una vez: no hay DOM nuevo que montar y desmontar, un fondo
+   pinta siempre por debajo del contenido —así que no hay pelea de capas con
+   el texto—, y como el que se desplaza es `.vis` (transparente) y no el papel,
+   los discos se quedan quietos mientras el documento pasa por delante. Luz
+   de ambiente, no confeti pegado al párrafo.
+
+   Los círculos llevan medida en píxeles y no en porcentaje porque un
+   porcentaje se estiraría con la caja: en un documento largo el disco se
+   volvería un óvalo. Y están puestos hacia los márgenes, que es donde la
+   columna de texto —44rem centradas— deja sitio. Tamaños distintos a propósito:
+   lo que hace la composición de la lámina es que no son todos iguales. */
+[data-skin="vivo"] .wr__paper {
+  background-image:
+    radial-gradient(circle 150px at 3% 9%,   var(--blob-a) 100%, transparent 0),
+    radial-gradient(circle 104px at 97% 21%, var(--blob-b) 100%, transparent 0),
+    radial-gradient(circle 58px  at 90% 34%, var(--blob-c) 100%, transparent 0),
+    radial-gradient(circle 122px at 93% 74%, var(--blob-c) 100%, transparent 0),
+    radial-gradient(circle 70px  at 8% 62%,  var(--blob-b) 100%, transparent 0),
+    radial-gradient(circle 136px at 5% 88%,  var(--blob-d) 100%, transparent 0),
+    radial-gradient(circle 44px  at 14% 30%, var(--blob-d) 100%, transparent 0),
+    radial-gradient(circle 90px  at 50% 103%, var(--blob-a) 100%, transparent 0);
+  background-repeat: no-repeat;
+}
+
+/* --- el mapa ---------------------------------------------------------------- */
+
+/* Dos capas que se mueven distinto, y ahí está el gusto: la trama de puntos va
+   en el lienzo, así que se arrastra y se acerca con él —es papel milimetrado,
+   y de paso hace visible el movimiento cuando se agarra el plano—, mientras
+   los discos van en el escenario y se quedan fijos. Arrastrar deja ver una
+   cosa pasando por delante de la otra. */
+[data-skin="vivo"] .map__canvas {
+  background-image: radial-gradient(var(--line-a) 1.2px, transparent 1.2px);
+  background-size: 26px 26px;
+}
+
+/* `position: relative` para que la capa de los discos se ancle aquí. No
+   cambia nada de lo que ya había: los nodos se sitúan contra `.map__canvas`,
+   que tiene el suyo. */
+[data-skin="vivo"] .map__stage { position: relative; }
+
+/* Los discos del escenario, planos igual que los de la hoja. En pseudo-elemento
+   y no en el fondo del propio escenario porque así pueden moverse —un fondo no
+   se puede transformar—, y `inset` negativo para que al derivar no asome el
+   borde. Va antes del lienzo en el orden del documento, así que el lienzo le
+   pinta encima sin que haya que darle un z-index a nada.
+
+   Aquí son más y de tamaños más dispares que en la hoja: detrás de un mapa no
+   hay párrafo que leer, y es donde la composición puede parecerse de verdad a
+   la lámina. */
+[data-skin="vivo"] .map__stage::before {
+  content: "";
+  position: absolute;
+  inset: -12%;
+  pointer-events: none;
+  background-image:
+    radial-gradient(circle 128px at 11% 17%, var(--blob-a) 100%, transparent 0),
+    radial-gradient(circle 54px  at 22% 31%, var(--blob-c) 100%, transparent 0),
+    radial-gradient(circle 166px at 85% 27%, var(--blob-c) 100%, transparent 0),
+    radial-gradient(circle 72px  at 73% 13%, var(--blob-b) 100%, transparent 0),
+    radial-gradient(circle 112px at 69% 83%, var(--blob-d) 100%, transparent 0),
+    radial-gradient(circle 40px  at 55% 68%, var(--blob-a) 100%, transparent 0),
+    radial-gradient(circle 96px  at 24% 79%, var(--blob-b) 100%, transparent 0),
+    radial-gradient(circle 62px  at 92% 58%, var(--blob-d) 100%, transparent 0);
+  background-repeat: no-repeat;
+  animation: vivo-drift 48s var(--in-out) infinite alternate;
+}
+
+/* Muy lento y muy poco: el mapa se mira para pensar, y algo que se mueve
+   deprisa detrás de lo que se está leyendo es un estorbo. A cuarenta y ocho
+   segundos no se ve moverse; se nota que el sitio está vivo. Sólo aquí, donde
+   no hay que leer un párrafo —en la hoja los discos están quietos—. */
+@keyframes vivo-drift {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to   { transform: translate3d(2.5%, -2%, 0) scale(1.06); }
+}
+
+/* --- los nodos --------------------------------------------------------------
+
+   Lo que pedía la lámina de las doce metodologías: fichas redondas, cada una
+   con su color, todas de la misma familia. El color no lo pone la fase entera
+   —serían doce veces el mismo azul— sino la posición: los cuatro tonos de la
+   gama se reparten y se repiten, así que dos nodos vecinos nunca coinciden y
+   los doce siguen siendo la misma etapa.
+
+   El tono se asigna una vez por nodo en cuatro propiedades propias, y los
+   estados de abajo las usan. Es la única forma que funciona: `--line-a` y
+   compañía son mezclas que ya se resolvieron en el <html>, y un nodo que
+   redefiniera `--ph-a` heredaría la mezcla vieja igual. Aliasarlas, en cambio,
+   es sólo copiar un color ya hecho.
+
+   `nth-child` y no `nth-of-type`: un nodo es un <button> si se puede pulsar y
+   un <div> si no, y `nth-of-type` cuenta cada tipo por separado —el reparto
+   saldría desordenado justo donde el mapa mezcla los dos—. */
+
+[data-skin="vivo"] .map__n {
+  --tone: var(--ph-a);
+  --tone-line: var(--line-a);
+  --tone-soft: var(--soft-a);
+  --tone-say: var(--say-a);
+
+  padding: 0.6rem 0.7rem;
+  border-color: var(--tone-line);
+  background-color: var(--tone-soft);
+}
+
+[data-skin="vivo"] .map__nodes > *:nth-child(4n + 2) {
+  --tone: var(--ph-b);
+  --tone-line: var(--line-b);
+  --tone-soft: var(--soft-b);
+  --tone-say: var(--say-b);
+}
+
+[data-skin="vivo"] .map__nodes > *:nth-child(4n + 3) {
+  --tone: var(--ph-c);
+  --tone-line: var(--line-c);
+  --tone-soft: var(--soft-c);
+  --tone-say: var(--say-c);
+}
+
+[data-skin="vivo"] .map__nodes > *:nth-child(4n + 4) {
+  --tone: var(--ph-d);
+  --tone-line: var(--line-d);
+  --tone-soft: var(--soft-d);
+  --tone-say: var(--say-d);
+}
+
+/* El rótulo, el título y la palomita toman el tono. Es lo que convierte una
+   caja de color en una ficha: el color no está sólo detrás, está en lo que se
+   lee. El título además sube a la geométrica, como los de la hoja. */
+[data-skin="vivo"] .map__n__tag { color: var(--tone-say); }
+[data-skin="vivo"] .map__n__head { font-family: var(--serif); font-weight: 700; }
+[data-skin="vivo"] .map__n__ok { color: var(--tone-say); }
+
+/* Los estados, otra vez. Están escritos en `indagar.css` con la misma
+   especificidad que las reglas de aquí, y esta hoja va después: si no se
+   repitieran, el fondo de arriba los taparía todos y los seis estados se
+   verían iguales. Repetirlos es además la ocasión de decirlos en color, que
+   es lo que no podían hacer allí.
+
+   `background-color` y no `background`: las siete naturalezas llevan una
+   trama diagonal en `background-image`, y la forma corta la borraría. */
+
+/* Lo recorrido: sigue ahí y hay que poder volver, pero ya no pide nada. Pierde
+   el color de fondo y se queda en el hilo. */
+[data-skin="vivo"] .map__n.is-done {
+  background-color: transparent;
+  border-color: var(--ink-line);
+}
+[data-skin="vivo"] .map__n.is-done .map__n__head { color: var(--ink-soft); }
+[data-skin="vivo"] .map__n.is-done .map__n__tag { color: var(--ink-faint); }
+
+/* Donde se está. El único con el tono entero en el borde y con sombra: el mapa
+   dice a dónde se puede ir, y esto dice dónde se está. */
+[data-skin="vivo"] .map__n.is-now {
+  border-color: var(--tone);
+  box-shadow: var(--shadow-lift);
+}
+
+/* Un paso que todavía no existe en el documento. Sin relleno, de puntos: es
+   exactamente lo que es. */
+[data-skin="vivo"] .map__n.is-ghost {
+  background-color: transparent;
+  border-color: var(--tone-line);
+}
+
+/* La naturaleza que se está mirando, y la tomada. Aquí sí manda el tono: es
+   una elección, y en este estilo una elección se ve en color. */
+[data-skin="vivo"] .map__n.is-pick,
+[data-skin="vivo"] .map__n.is-taken {
+  border-color: var(--tone);
+  background-color: var(--tone-soft);
+}
+
+/* El foco del teclado, en el tono del nodo y no en tinta plana. */
+[data-skin="vivo"] button.map__n:focus-visible { outline-color: var(--tone); }
+
+/* La trama de las siete naturalezas, en el tono en vez de en gris. */
+[data-skin="vivo"] .map__n--naturaleza {
+  background-image: repeating-linear-gradient(
+    135deg, var(--tone-soft) 0 7px, transparent 7px 14px);
+}
+
+/* Las aristas y el cerco del nodo donde se está: la traza es de la gama, no
+   gris. El cerco se queda en tinta —es el único indicio que no debe depender
+   del color, porque es el que dice «aquí»—. */
+[data-skin="vivo"] .map__wire { stroke: var(--line-a); }
+[data-skin="vivo"] .map__wire.is-on { stroke: var(--ph); }
+
+@media (prefers-reduced-motion: reduce) {
+  [data-skin="vivo"] .map__stage::before { animation: none; }
+}

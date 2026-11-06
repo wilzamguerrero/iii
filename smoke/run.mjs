@@ -31,9 +31,11 @@ const CDP_PORT = Number(process.env.CDP_PORT ?? 9222);
 const BASE = process.env.BASE ?? `http://localhost:${PORT}`;
 
 /* En orden: la entrada, la hoja, la revisión, el arranque de un proyecto, la
-   franja, el asistente, el dictado y la ruta de Indagar. Cada una deja la
-   página como la encuentra —recarga al empezar—, así que el orden es para
-   leerlo, no una dependencia. */
+   franja, el asistente, el dictado, la ruta de Indagar y los dos ejes del
+   aspecto. Cada una deja la página como la encuentra —recarga al empezar—, así
+   que el orden es para leerlo, no una dependencia. La novena es la única que
+   además tiene que limpiar detrás: lo suyo —claro/oscuro, sobrio/vivo— se
+   guarda en el navegador, y la quinta comprueba lo que hay guardado. */
 const PARTS = [
   "1-entrada.mjs",
   "2-lectura.mjs",
@@ -43,6 +45,7 @@ const PARTS = [
   "6-asistente.mjs",
   "7-dictado.mjs",
   "8-indagar.mjs",
+  "9-estilo.mjs",
 ];
 
 const CHROMES = [

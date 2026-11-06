@@ -22,6 +22,8 @@ import {
   type Target,
 } from "./_ai.ts";
 import { registryByApi, registryProvider, type RegistryProvider } from "./_registry.ts";
+import { isOpenCode, openCodeHeaders, resolveOrgId, stripForwardHeaders } from "./_opencode.ts";
+import { freepiCatalog, freepiHeaders, isFreePi } from "./_freepi.ts";
 
 export interface AiModel {
   id: string;
@@ -210,11 +212,25 @@ const handler: ApiHandler = async (req, res) => {
     return;
   }
 
+  // En OpenCode el catálogo lleva las mismas cabeceras de identidad que el chat:
+  // su cortafuegos bloquea los UA genéricos —el `undici` que pone Node por
+  // defecto entre ellos— y el camino `/zen` pide además la sesión. Sin esto, el
+  // selector de modelos se queda vacío aunque la clave sea buena.
+  const opencode = isOpenCode(target.modelUrls[0] ?? "");
+  // free-pi no tiene `/v1/models` —da 404—: su catálogo sale de `/client-version`,
+  // el mismo que usa el CLI para pintar el selector. Además hay que anunciar la
+  // identidad, como en el chat (`_freepi.ts`).
+  const freepi = isFreePi(target.chatUrls[0] ?? "");
+  // El workspace, si la clave lo tiene. Sin él el catálogo de OpenCode puede
+  // contestar 401 aunque la clave valga: se resuelve igual que en el chat.
+  const org = opencode && key ? await resolveOrgId(key) : null;
   const headers: Record<string, string> = {
     Accept: "application/json",
     ...authHeaders(key, target),
     ...target.headers,
-    ...target.extra,
+    ...(opencode ? stripForwardHeaders({ ...target.extra }) : target.extra),
+    ...(opencode ? openCodeHeaders(target.modelUrls[0] ?? "", key, org) : {}),
+    ...(freepi ? await freepiHeaders(key) : {}),
   };
 
   try {
@@ -229,7 +245,20 @@ const handler: ApiHandler = async (req, res) => {
     const map = mapperFor(target);
     const reg = await registryFor(target);
     let models: AiModel[] = [];
-    if (payload) {
+    if (freepi) {
+      // No se usa `listOf` sobre la respuesta en bruto porque `/client-version`
+      // trae `{ min, latest, notice, models: [...] }` y cada modelo declara `input`
+      // y su coste de uso, que es de donde salen `vision` y `free`.
+      const catalog = await freepiCatalog(key);
+      if (catalog) {
+        models = catalog.models.map((model) => ({
+          id: model.id,
+          name: model.name,
+          publisher: "",
+          ...(model.free ? { free: true } : {}),
+        }));
+      }
+    } else if (payload) {
       for (const entry of listOf(payload)) {
         const model = map(entry);
         if (model) models.push(enrich(model, reg));
@@ -271,9 +300,14 @@ const handler: ApiHandler = async (req, res) => {
     models = order(models);
     // Un modelo por defecto que no está en el catálogo de hoy sobra: preseleccionarlo
     // haría que el primer mensaje fallara sin motivo aparente.
+    //
+    // Si no está, se ofrece el primero de la lista en vez de nada. Hay proveedores
+    // —OpenCode— donde el modelo favorito cambia con el tiempo, y dejar el
+    // selector vacío obliga a elegir a mano algo que la lista ya resuelve. Un
+    // modelo que el catálogo acaba de devolver es, por definición, uno que existe.
     const fallback = models.some((model) => model.id === target.defaultModel)
       ? target.defaultModel
-      : "";
+      : (models[0]?.id ?? "");
 
     res.status(200).json({
       provider: target.id,

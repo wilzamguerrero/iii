@@ -1,4 +1,4 @@
-import { browserKey, customProvider } from "./config.ts";
+import { customProvider, effectiveKey } from "./config.ts";
 import { isCustom, type ProviderId } from "./types.ts";
 
 /**
@@ -43,7 +43,10 @@ function ascii(value: string): string {
 export function providerHeaders(provider: ProviderId): Record<string, string> {
   const headers: Record<string, string> = {};
 
-  const key = browserKey(provider);
+  // `effectiveKey` y no `browserKey`: en el nivel gratuito de OpenCode la clave
+  // es la cadena `public`, que nadie escribe. Sin esto el servidor recibía una
+  // petición sin credencial y contestaba 401.
+  const key = effectiveKey(provider);
   if (key) headers["X-Ai-Key"] = ascii(key);
 
   const custom = customProvider(provider);

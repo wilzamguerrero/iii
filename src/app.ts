@@ -26,6 +26,7 @@ import { mountBegin } from "./ui/start/begin.ts";
 import { mountEntry } from "./ui/start/entry.ts";
 import { mountWriter } from "./ui/writer/writer.ts";
 import { startTheme } from "./core/state/theme.ts";
+import { startSkin } from "./core/state/skin.ts";
 
 export interface IntentSubmitDetail {
   /** Lo que la persona escribió o dictó, ya recortado. */
@@ -41,12 +42,16 @@ declare global {
 }
 
 /**
- * El tema. La primera pintada ya la resolvió el script suelto de `index.html`
+ * Cómo se ve la plataforma. Son dos ejes y por eso dos llamadas: claro/oscuro
+ * por un lado y sobrio/vivo por el otro, cruzados en cuatro temas.
+ *
+ * La primera pintada de los dos ya la resolvió el script suelto de `index.html`
  * —los módulos van diferidos y llegarían tarde—; esto engancha lo que hace falta
- * después: repintar cuando la persona lo cambia en la bandeja y seguir al
- * sistema mientras esté en «automático».
+ * después: repintar cuando la persona lo cambia en la bandeja y, en el tema,
+ * seguir al sistema mientras esté en «automático».
  */
 startTheme();
+startSkin();
 
 const dock = mountDock();
 mountAssistant();

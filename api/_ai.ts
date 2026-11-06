@@ -32,7 +32,7 @@
 import type { ApiRequest, ApiResponse } from "./_types.ts";
 
 /** Los proveedores que trae la aplicación. Los demás los añade la persona. */
-export type BuiltinId = "openrouter" | "nvidia" | "github";
+export type BuiltinId = "openrouter" | "nvidia" | "github" | "opencode" | "freepi";
 
 export interface ProviderSpec {
   id: BuiltinId;
@@ -48,6 +48,15 @@ export interface ProviderSpec {
   defaultModel: string;
   /** Variable de entorno con la que quien despliega puede poner su propia clave. */
   envKey: string;
+  /**
+   * La credencial que se usa cuando no hay ninguna otra.
+   *
+   * OpenCode atiende su nivel gratuito con la cadena literal `public`, que no es
+   * un secreto: es la forma de decir «sin cuenta». Sin esto, la aplicación pedía
+   * una clave que no existe y el proveedor quedaba inservible por un requisito
+   * inventado.
+   */
+  fallbackKey?: string;
   /** Cabeceras fijas que el proveedor pide además del `Bearer`. */
   headers?: Readonly<Record<string, string>>;
   /** Cierto cuando el catálogo de modelos es público (OpenRouter). */
@@ -103,6 +112,46 @@ export const PROVIDERS: Readonly<Record<BuiltinId, ProviderSpec>> = {
     },
     registry: "github-copilot",
   },
+  /**
+   * OpenCode, el nivel gratuito de su puerta de inferencia.
+   *
+   * Compatible con OpenAI en la ruta, no en la puerta: exige el cuerpo de su
+   * propio cliente o contesta `429 FreeUsageLimitError` (que no es una cuota
+   * agotada). Todo lo que hay que hacer con el cuerpo y con las cabeceras está
+   * en `_opencode.ts`, y se aplica solo porque el host es `opencode.ai`.
+   */
+  opencode: {
+    id: "opencode",
+    label: "OpenCode",
+    chatUrls: ["https://opencode.ai/inference/openai/v1/chat/completions"],
+    // El catálogo vive fuera de la ruta de inferencia: `/inference/v1/models`.
+    modelUrls: ["https://opencode.ai/inference/v1/models"],
+    defaultModel: "deepseek-v4.1-flash-free",
+    envKey: "OPENCODE_API_KEY",
+    // No es un secreto: es cómo se pide el nivel gratuito. Ver el comentario de
+    // `fallbackKey` arriba.
+    fallbackKey: "public",
+    registry: "opencode",
+  },
+  /**
+   * free-pi: el backend del CLI ad-supported, OpenAI-compatible.
+   *
+   * Tres cosas fuera de lo normal, todas en `_freepi.ts`: la credencial es el
+   * JWT del login por dispositivo de GitHub, la sesión es un uuid estable
+   * (cuatro simultáneas como máximo) y la versión de cliente se anuncia en una
+   * cabecera que, si va por debajo del mínimo, bloquea con un 426.
+   *
+   * `modelUrls` apunta a `/client-version` porque `/v1/models` da 404.
+   */
+  freepi: {
+    id: "freepi",
+    label: "free-pi",
+    chatUrls: ["https://api.freepi.ai/v1/chat/completions"],
+    modelUrls: ["https://api.freepi.ai/client-version"],
+    defaultModel: "deepseek-v4.1-flash",
+    envKey: "FREEPI_TOKEN",
+    registry: "free-pi",
+  },
 };
 
 /**
@@ -124,6 +173,8 @@ export interface Target {
   publicCatalog: boolean;
   /** Variable de entorno con la clave del servidor, si el destino tiene una. */
   envKey?: string;
+  /** Credencial del nivel gratuito, cuando no hace falta que nadie ponga nada. */
+  fallbackKey?: string;
   /** Identificador en models.dev, si se conoce. */
   registry: string;
   /** URL base, sólo en los proveedores propios. */
@@ -467,6 +518,7 @@ export function readTarget(req: ApiRequest, provider: unknown): TargetResult {
       headers: spec.headers,
       publicCatalog: spec.publicCatalog === true,
       envKey: spec.envKey,
+      ...(spec.fallbackKey ? { fallbackKey: spec.fallbackKey } : {}),
       registry: spec.registry,
       base: "",
       custom: false,
@@ -477,18 +529,22 @@ export function readTarget(req: ApiRequest, provider: unknown): TargetResult {
 }
 
 /**
- * La clave que se usará: la que manda el navegador o, si no la manda, la que
- * haya en el entorno del servidor. Las dos vías existen a propósito —la persona
- * pega su clave en los ajustes del asistente, y quien despliega puede poner una para
- * todos—
- * y el navegador nunca ve la del entorno. Un proveedor propio no tiene variable
- * de entorno: su clave viene siempre del navegador.
+ * La clave que se usará: la que manda el navegador, la que haya en el entorno del
+ * servidor o, si el proveedor tiene nivel gratuito sin credencial, la suya.
+ *
+ * Las tres vías existen a propósito —la persona pega su clave en los ajustes del
+ * asistente, quien despliega puede poner una para todos, y hay niveles gratuitos
+ * que no piden nada— y el navegador nunca ve la del entorno.
+ *
+ * El orden importa: si alguien puso su clave en el entorno, no se le cambia por
+ * `public`; y si puso la suya en los ajustes, manda esa.
  */
 export function resolveKey(req: ApiRequest, target: Target): string | null {
   const sent = header(req, "x-ai-key");
   if (sent) return sent;
   const fromEnv = target.envKey ? process.env[target.envKey]?.trim() : "";
-  return fromEnv ? fromEnv : null;
+  if (fromEnv) return fromEnv;
+  return target.fallbackKey ?? null;
 }
 
 export function noStore(res: ApiResponse): void {
@@ -501,6 +557,8 @@ export function configuredProviders(): Record<BuiltinId, boolean> {
     openrouter: Boolean(process.env.OPENROUTER_API_KEY),
     nvidia: Boolean(process.env.NVIDIA_API_KEY),
     github: Boolean(process.env.GITHUB_AI_TOKEN),
+    opencode: Boolean(process.env.OPENCODE_API_KEY),
+    freepi: Boolean(process.env.FREEPI_TOKEN),
   };
 }
 
@@ -552,7 +610,17 @@ export async function fetchWithFallback(
 }
 
 /** Vuelca el flujo del proveedor tal cual. Es texto SSE y se pasa sin tocar. */
-export async function pipeStream(upstream: Response, res: ApiResponse): Promise<void> {
+export async function pipeStream(
+  upstream: Response,
+  res: ApiResponse,
+  /**
+   * Retoque opcional de cada trozo antes de escribirlo. Lo usa OpenCode para
+   * devolver los nombres de herramienta que su puerta obligó a renombrar
+   * (`restoreStreamNames` en `_opencode.ts`). Se aplica al texto ya decodificado
+   * y nunca ve un trozo partido a medias por culpa de un carácter multibyte.
+   */
+  transform?: (text: string) => string,
+): Promise<void> {
   res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
   res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection", "keep-alive");
@@ -568,6 +636,10 @@ export async function pipeStream(upstream: Response, res: ApiResponse): Promise<
 
   const reader = body.getReader();
   const decoder = new TextDecoder();
+  // Un trozo puede cortar una línea `data:` por la mitad. Si se retoca antes de
+  // que la línea esté entera, el JSON no parsea y el nombre no se restaura. Se
+  // retiene la última línea incompleta hasta el trozo siguiente.
+  let pending = "";
   const flush = (): void => {
     const maybe = res as unknown as { flush?: () => void };
     try { maybe.flush?.(); } catch { /* sin compresión no hay nada que vaciar */ }
@@ -576,9 +648,22 @@ export async function pipeStream(upstream: Response, res: ApiResponse): Promise<
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    res.write(decoder.decode(value, { stream: true }));
+    const text = decoder.decode(value, { stream: true });
+    if (!transform) {
+      res.write(text);
+      flush();
+      continue;
+    }
+    const buffer = pending + text;
+    const cut = buffer.lastIndexOf("\n");
+    if (cut === -1) { pending = buffer; continue; }
+    pending = buffer.slice(cut + 1);
+    res.write(transform(buffer.slice(0, cut + 1)));
     flush();
   }
+
+  // Lo último sin salto final se escribe igual: perderlo truncaría la respuesta.
+  if (pending) res.write(transform ? transform(pending) : pending);
   res.end();
 }
 

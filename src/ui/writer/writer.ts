@@ -593,11 +593,32 @@ async function load(target: SelectedPage): Promise<void> {
 
 /* --- abrir, cerrar -------------------------------------------------------- */
 
+/**
+ * En qué fase se está, escrito en el <html> para que lo vea el CSS.
+ *
+ * No es estado de la aplicación —nadie lo lee desde JavaScript— sino la única
+ * forma de que la gama de color de la fase llegue a piezas que están fuera del
+ * documento: la franja, la bandeja, el fondo de la página. Un atributo en la
+ * raíz lo hereda todo, así que ningún componente necesita saber qué fase es ni
+ * suscribirse a nada; `tokens.css` cambia cuatro tonos y el resto sale solo.
+ *
+ * `null` en los documentos que no son uno de los tres del proyecto —una página
+ * cualquiera de Notion no está en ninguna fase—: entonces se quita el atributo
+ * y vale la gama sin fase. En sobrio esto no se ve: allí los tonos de fase son
+ * la tinta.
+ */
+function paintPhase(): void {
+  const phase = page ? phaseByName(page.name) : null;
+  if (phase) document.documentElement.dataset.phase = phase;
+  else delete document.documentElement.dataset.phase;
+}
+
 function show(target: SelectedPage): void {
   if (!root) return;
   const already = page?.id === target.id && !root.hidden;
   page = target;
   paintWhere();
+  paintPhase();
   root.hidden = false;
   document.body.classList.add("is-writing");
   // Volver a pulsar la misma página no vuelve a leerla de Notion: sería tirar lo
@@ -640,6 +661,7 @@ function shut(): void {
   document.body.classList.remove("is-writing");
   // La página abierta se olvida para que el asistente deje de decir que la ve.
   page = null;
+  paintPhase();
   seq += 1;
   if (selection.get()) clearSelection();
 }

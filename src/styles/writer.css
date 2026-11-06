@@ -442,7 +442,7 @@ body.is-writing { overflow: hidden; }
 
 .doc__code {
   padding: 0.05em 0.3em;
-  border-radius: 2px;
+  border-radius: var(--r-soft);
   background: var(--tint);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.87em;
@@ -854,7 +854,7 @@ body.is-writing { overflow: hidden; }
   height: 30px;
   flex: 0 0 auto;
   border: 1px solid var(--ink-line);
-  border-radius: 3px;
+  border-radius: var(--r-soft);
   background: var(--wash);
   color: var(--ink-soft);
   font-size: 0.72rem;

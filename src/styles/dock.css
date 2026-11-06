@@ -556,7 +556,15 @@ body[data-dock="open"] .menu {
   color: var(--ink);
 }
 
-.pnl__lead em { font-family: var(--serif); font-style: italic; }
+.pnl__lead em { font-family: var(--serif); font-style: var(--slant); }
+
+/* Un rótulo que abre otro asunto dentro de la misma ventanita. El mismo hilo
+   que `.pnl__note--sep`: es la misma idea, sobre un rótulo en vez de una nota. */
+.pnl__lead--sep {
+  margin-top: 0.3rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--ink-line);
+}
 
 .pnl__note {
   margin: 0;

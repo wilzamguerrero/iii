@@ -1,14 +1,38 @@
 /* ============================================================
    Tokens y base — el único sitio donde se declaran color,
-   tipografía y curvas. Los valores claros son los originales de
-   la intro; toda la interfaz nueva se construye con estos y no
-   añade acentos, sombras de color ni degradados.
+   tipografía, esquinas y curvas.
 
-   Nada de color literal fuera de aquí: es lo que permite que el
-   tema oscuro sea una sola tabla y no una revisión de cada
-   componente. Lo elige la persona en la bandeja de la franja
-   (`ui/dock/tray.ts`) y lo aplica `core/state/theme.ts`
-   escribiendo `data-theme` en el <html>.
+   Nada de color literal fuera de aquí: es lo que permite que un
+   tema sea una sola tabla y no una revisión de cada componente.
+   Fuera de aquí sólo se escribe `var(…)`, mezclas incluidas.
+
+   Hay **dos ejes**, no una lista de cuatro temas:
+
+     data-theme   light | dark        (`core/state/theme.ts`)
+     data-skin    sobrio | vivo       (`core/state/skin.ts`)
+
+   Cruzados dan los cuatro temas. Que sean dos ejes es lo que
+   hace que esto quepa: `data-theme` sigue significando lo que
+   significaba, así que las reglas que ya existían siguen
+   valiendo sin tocarse, y «automático» sigue funcionando en los
+   cuatro —con una sola lista de cuatro valores no habría forma
+   de decir «sigue al sistema», porque el valor guardado llevaría
+   dentro también la familia tipográfica—.
+
+     · sobrio — el papel editorial con el que se diseñó la
+       plataforma: serif en el cuerpo, ningún acento, esquinas de
+       3px. Es el que sale sin haber elegido.
+     · vivo — geométrico y con color: cada fase del método tiene
+       su gama, las esquinas se redondean y hay formas de color
+       al fondo. Vive en `vivo.css`, que no declara ni un color:
+       sólo usa lo de aquí.
+
+   Y un tercer atributo que no es una elección de la persona sino
+   dónde está: `data-phase` en el <html>, puesto por el documento
+   que se abre (`ui/writer/writer.ts`). Mueve la gama sin que
+   ningún componente sepa qué fase es. En sobrio los tonos de
+   fase son la tinta, así que el papel editorial no cambia al
+   abrir un documento.
    ============================================================ */
 
 :root {
@@ -25,11 +49,18 @@
   --ghost: rgba(20, 23, 28, 0.3);
   /* El velo de una hoja modal: la página sigue ahí, apagada. */
   --veil: rgba(20, 23, 28, 0.22);
+  /* El anillo que late mientras se dicta. Sigue a la tinta y no a un gris
+     fijo: se dibuja sobre el papel, y un anillo oscuro sobre papel oscuro no
+     se ve —era lo que pasaba en el tema oscuro—. */
+  --ring: rgba(20, 23, 28, 0.22);
   /* Lo que falló. No es el único indicio: el texto también lo dice. */
   --bad: #a3341f;
   /* Lo que escribió la IA y nadie ha tocado. Es el azul de Notion —el color
      viaja allí como color de texto nativo—, así que aquí se declara el mismo
-     para que el documento se lea igual en los dos sitios. */
+     para que el documento se lea igual en los dos sitios.
+
+     No cambia con el estilo, y no es un descuido: los demás colores son gusto
+     y éste es fidelidad del dato. En «vivo» vale el mismo azul. */
   --ai: #337ea9;
   /* El resaltado de marcar texto. Sólo hace falta porque el texto de la IA
      retoca su `::selection` para conservar su color, y en cuanto una regla
@@ -41,14 +72,39 @@
   /* Un panel suelto sobre la página: la franja, la ventana del asistente y las
      ventanitas de la bandeja son el mismo objeto y se declaran una vez. */
   --r-panel: 3px;
+  /* Lo pequeño que se recorta dentro de otra cosa: un `code`, un botón de
+     icono, un chip. Va aparte porque en «vivo» un panel se redondea mucho y
+     esto no puede seguirle: un `code` de 1em con 14px de radio es una píldora
+     y deja de leerse como código. */
+  --r-soft: 2px;
+  /* Un nodo del mapa. En sobrio es un panel más; en vivo se redondea más que
+     un panel, que es lo que lo separa de una ventana y lo acerca a una ficha. */
+  --r-node: var(--r-panel);
+
   --shadow: 0 14px 40px rgba(20, 23, 28, 0.14);
   --shadow-lift: 0 3px 10px rgba(20, 23, 28, 0.22);
   --shadow-lift-on: 0 5px 14px rgba(20, 23, 28, 0.3);
 
+  /* Los dos nombres se quedan como estaban —renombrarlos serían treinta y
+     cuatro sustituciones por un cambio que no se ve—, pero lo que nombran es
+     un papel y no una clasificación:
+
+       --serif  la voz del documento: su cuerpo, el énfasis, un juicio.
+       --sans   la letra de la interfaz: barras, botones, rótulos.
+
+     En «vivo» la voz del documento es una geométrica y no una serif, y como
+     una geométrica de titular cansa leída en párrafo largo, `vivo.css` cruza
+     los dos en la hoja: el cuerpo baja a la de interfaz y son los títulos los
+     que suben a la de titular. */
   --sans: "Segoe UI Variable Display", "Segoe UI", Inter, -apple-system,
           BlinkMacSystemFont, system-ui, "Helvetica Neue", Arial, sans-serif;
   --serif: "Instrument Serif", "Iowan Old Style", "Palatino Linotype", Palatino,
            Georgia, "Times New Roman", serif;
+  /* La inclinación de los rótulos de la voz del documento. Es un token porque
+     la geométrica de «vivo» no tiene cursiva de verdad y el navegador se la
+     inventaría inclinando los trazos: en una serif la cursiva es otro dibujo
+     y se lee bien; en una geométrica es un error de imprenta. */
+  --slant: italic;
 
   /* Curvas propias: nada de ease por defecto. */
   --out-expo: cubic-bezier(0.16, 1, 0.3, 1);
@@ -56,6 +112,64 @@
   --in-out: cubic-bezier(0.65, 0, 0.35, 1);
 
   color-scheme: light;
+
+  /* --- la gama de la fase ---------------------------------------------------
+
+     Cuatro tonos, y de ahí sale todo lo demás. Cuatro y no uno porque es lo
+     que pedía la lámina: dentro de una etapa hay variación, así que doce
+     nodos seguidos no son doce veces el mismo azul.
+
+     En sobrio los cuatro son la tinta: este papel no tiene colores de estado
+     y no va a tenerlos por abrir un documento. Y las formas flotantes, al ser
+     `transparent`, desaparecen sin que haga falta una regla que las apague. */
+  --ph-a: var(--ink);
+  --ph-b: var(--ink);
+  --ph-c: var(--ink);
+  --ph-d: var(--ink);
+
+  --blob-a: transparent;
+  --blob-b: transparent;
+  --blob-c: transparent;
+  --blob-d: transparent;
+}
+
+/* Los derivados de los cuatro tonos: el hilo de un borde, el lavado de un
+   fondo y la versión que se lee como texto.
+
+   Una propiedad personalizada se resuelve **donde se declara**, no donde se
+   usa: estas doce nacen en el <html> con la gama que haya ganado la cascada, y
+   ahí se quedan. Por eso los nodos del mapa, que necesitan un tono cada uno,
+   no redefinen `--ph-a` esperando que el derivado les siga —no les seguiría,
+   heredarían la mezcla ya hecha—: usan los doce directamente, uno por
+   posición.
+
+   `oklab` y no `srgb`: mezclar en sRGB apaga el tono por el camino —un azul
+   con transparente da un azul sucio— y en oklab la mezcla conserva el color
+   que se eligió. */
+:root {
+  /* El hilo de un borde. */
+  --line-a: color-mix(in oklab, var(--ph-a) 40%, transparent);
+  --line-b: color-mix(in oklab, var(--ph-b) 40%, transparent);
+  --line-c: color-mix(in oklab, var(--ph-c) 40%, transparent);
+  --line-d: color-mix(in oklab, var(--ph-d) 40%, transparent);
+
+  /* El lavado de un fondo. Tiene que dejar leer encima: es un fondo, no un
+     relleno. */
+  --soft-a: color-mix(in oklab, var(--ph-a) 9%, transparent);
+  --soft-b: color-mix(in oklab, var(--ph-b) 9%, transparent);
+  --soft-c: color-mix(in oklab, var(--ph-c) 9%, transparent);
+  --soft-d: color-mix(in oklab, var(--ph-d) 9%, transparent);
+
+  /* El tono como texto: llevado hacia la tinta hasta que se lee sobre el
+     papel. Vale en los cuatro temas sin declararse dos veces, porque la tinta
+     con la que se mezcla ya es la del tema. */
+  --say-a: color-mix(in oklab, var(--ph-a) 72%, var(--ink));
+  --say-b: color-mix(in oklab, var(--ph-b) 72%, var(--ink));
+  --say-c: color-mix(in oklab, var(--ph-c) 72%, var(--ink));
+  --say-d: color-mix(in oklab, var(--ph-d) 72%, var(--ink));
+
+  /* La gama en un tono, para lo que sólo necesita uno. */
+  --ph: var(--ph-a);
 }
 
 /* El mismo papel, del otro lado. No es el claro invertido: la tinta baja de
@@ -79,6 +193,7 @@
   --ghost: rgba(234, 238, 243, 0.32);
   /* Como las sombras: sobre fondo oscuro, un velo de tinta clara aclararía. */
   --veil: rgba(0, 0, 0, 0.55);
+  --ring: rgba(234, 238, 243, 0.22);
   --bad: #e79379;
   --ai: #529cca;
   /* Sobre papel oscuro el mismo alfa se apaga: sube, o marcar no se distingue. */
@@ -89,6 +204,170 @@
   --shadow-lift-on: 0 6px 18px rgba(0, 0, 0, 0.6);
 
   color-scheme: dark;
+}
+
+/* ============================================================
+   vivo — claro
+   ============================================================
+
+   El papel no es blanco puro sino un hueso muy leve: sobre
+   blanco puro un color pastel se ve sucio, y sobre un blanco
+   cálido se ve intencionado. La tinta lleva una gota de azul por
+   lo mismo —un negro neutro al lado de tonos saturados parece
+   apagado—.
+
+   Las sombras suben de desenfoque y bajan de opacidad: una
+   esquina de 14px con una sombra corta y dura se lee como un
+   recorte; lo que sostiene una forma redonda es aire debajo. */
+:root[data-skin="vivo"] {
+  --paper: #fcfbf9;
+  --ink: #191926;
+  --ink-soft: #5d5d70;
+  --ink-faint: rgba(25, 25, 38, 0.2);
+  --ink-line: rgba(25, 25, 38, 0.12);
+
+  --wash: rgba(25, 25, 38, 0.03);
+  --tint: rgba(25, 25, 38, 0.05);
+  --ghost: rgba(25, 25, 38, 0.32);
+  --veil: rgba(25, 25, 38, 0.26);
+  --bad: #c2402a;
+
+  --r-panel: 14px;
+  --r-soft: 7px;
+  --r-node: 18px;
+
+  --shadow: 0 18px 50px rgba(25, 25, 38, 0.13);
+  --shadow-lift: 0 4px 16px rgba(25, 25, 38, 0.14);
+  --shadow-lift-on: 0 8px 26px rgba(25, 25, 38, 0.2);
+
+  --sans: "Plus Jakarta Sans", "Segoe UI Variable Text", "Segoe UI",
+          -apple-system, BlinkMacSystemFont, system-ui, Arial, sans-serif;
+  --serif: Outfit, "Plus Jakarta Sans", "Segoe UI Variable Display",
+           "Segoe UI", system-ui, Arial, sans-serif;
+  --slant: normal;
+
+  /* El anillo de dictar toma el color de la fase: se está dictando dentro de
+     una etapa, y es la clase de detalle por el que el color de fase vale la
+     pena. */
+  --ring: color-mix(in oklab, var(--ph) 45%, transparent);
+
+  /* Sin fase: la plataforma antes de abrir un documento. No es la gama de
+     ninguna de las tres —no se está en ninguna— sino una mezcla de las tres,
+     para que la casa tenga color propio y no parezca que se está indagando. */
+  --ph-a: #5b5bd6;
+  --ph-b: #2f8fd0;
+  --ph-c: #d9704f;
+  --ph-d: #3fa06a;
+}
+
+/* ============================================================
+   vivo — oscuro: el gris de Adobe
+   ============================================================
+
+   Un gris medio y no un casi negro, que es lo que separa a
+   Photoshop o Illustrator de una terminal: sobre un gris de
+   éstos un color pastel conserva su tono, mientras que sobre
+   negro se apaga y hay que subirle la saturación hasta que
+   chilla. Lleva una pizca de azul, como los paneles de esos
+   programas.
+
+   Los tonos de las gamas suben de claridad y bajan de saturación
+   respecto al claro. Es obligatorio y no decorativo: un azul con
+   contraste cómodo sobre papel blanco, puesto sobre gris medio,
+   se hunde. */
+:root[data-skin="vivo"][data-theme="dark"] {
+  --paper: #2f2f34;
+  --ink: #ececf1;
+  --ink-soft: #a7a7b5;
+  --ink-faint: rgba(236, 236, 241, 0.28);
+  --ink-line: rgba(236, 236, 241, 0.15);
+
+  --wash: rgba(255, 255, 255, 0.045);
+  --tint: rgba(255, 255, 255, 0.08);
+  --ghost: rgba(236, 236, 241, 0.34);
+  --veil: rgba(0, 0, 0, 0.5);
+  --bad: #ef9a84;
+
+  --shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+  --shadow-lift: 0 4px 16px rgba(0, 0, 0, 0.42);
+  --shadow-lift-on: 0 8px 26px rgba(0, 0, 0, 0.55);
+
+  --ph-a: #9b9bf0;
+  --ph-b: #79bdf0;
+  --ph-c: #f0a186;
+  --ph-d: #7fc99a;
+}
+
+/* ============================================================
+   Las tres gamas
+   ============================================================
+
+   Indagar, azules y cianes: mirar, hondo, frío.
+   Idear, ámbar y coral: la chispa, lo cálido.
+   Implementar, verdes: crecer, lo que ya está hecho.
+
+   Van después de los dos bloques de arriba y llevan los dos
+   atributos, así que ganan por especificidad sin `!important`.
+   Las oscuras llevan tres y ganan a las claras por lo mismo. */
+
+:root[data-skin="vivo"][data-phase="indagar"] {
+  --ph-a: #2f6fd0;
+  --ph-b: #1f9b9b;
+  --ph-c: #5b5bd6;
+  --ph-d: #3aa3e3;
+}
+
+:root[data-skin="vivo"][data-phase="idear"] {
+  --ph-a: #dd8c22;
+  --ph-b: #de5f3d;
+  --ph-c: #d64d84;
+  --ph-d: #b862cc;
+}
+
+:root[data-skin="vivo"][data-phase="implementar"] {
+  --ph-a: #3b9146;
+  --ph-b: #789f28;
+  --ph-c: #1b9877;
+  --ph-d: #46a98b;
+}
+
+:root[data-skin="vivo"][data-theme="dark"][data-phase="indagar"] {
+  --ph-a: #7aa9f0;
+  --ph-b: #4fc9c1;
+  --ph-c: #9b9bf0;
+  --ph-d: #79c4f5;
+}
+
+:root[data-skin="vivo"][data-theme="dark"][data-phase="idear"] {
+  --ph-a: #f0b968;
+  --ph-b: #f08e71;
+  --ph-c: #ef86ad;
+  --ph-d: #dfa3e6;
+}
+
+:root[data-skin="vivo"][data-theme="dark"][data-phase="implementar"] {
+  --ph-a: #7fc98a;
+  --ph-b: #b3cf6a;
+  --ph-c: #5ecaa8;
+  --ph-d: #8dd3bc;
+}
+
+/* Las formas del fondo. Se declaran como color hecho y no como un alfa suelto
+   para que quien las use escriba `var(--blob-a)` y no una mezcla: el color se
+   decide aquí. En claro van más diluidas que en oscuro, porque sobre papel
+   claro un disco de color compite con el texto mucho antes que sobre gris. */
+:root[data-skin="vivo"] {
+  --blob-a: color-mix(in oklab, var(--ph-a) 20%, transparent);
+  --blob-b: color-mix(in oklab, var(--ph-b) 18%, transparent);
+  --blob-c: color-mix(in oklab, var(--ph-c) 16%, transparent);
+  --blob-d: color-mix(in oklab, var(--ph-d) 18%, transparent);
+}
+
+:root[data-skin="vivo"][data-theme="dark"] {
+  --blob-a: color-mix(in oklab, var(--ph-a) 26%, transparent);
+  --blob-b: color-mix(in oklab, var(--ph-b) 24%, transparent);
+  --blob-c: color-mix(in oklab, var(--ph-c) 22%, transparent);
+  --blob-d: color-mix(in oklab, var(--ph-d) 24%, transparent);
 }
 
 *, *::before, *::after { box-sizing: border-box; }

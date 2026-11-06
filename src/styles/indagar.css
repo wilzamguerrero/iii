@@ -134,7 +134,7 @@
   flex: 1 1 auto;
   min-width: 0;
   font-family: var(--serif);
-  font-style: italic;
+  font-style: var(--slant);
   font-size: 1rem;
   line-height: 1.35;
 }
@@ -317,7 +317,7 @@
   min-width: 0;
   overflow: hidden;
   font-family: var(--serif);
-  font-style: italic;
+  font-style: var(--slant);
   font-size: 0.92rem;
   color: var(--ink-soft);
   text-overflow: ellipsis;
@@ -466,7 +466,7 @@
   gap: 0.1rem;
   padding: 0.5rem 0.6rem;
   border: 1px solid var(--ink-line);
-  border-radius: var(--r-panel);
+  border-radius: var(--r-node);
   background: var(--paper);
   color: var(--ink);
   font-family: inherit;
@@ -478,7 +478,7 @@ button.map__n:focus-visible { outline: 1px solid var(--ink); outline-offset: 2px
 
 .map__n__tag {
   font-family: var(--serif);
-  font-style: italic;
+  font-style: var(--slant);
   font-size: 0.72rem;
   color: var(--ink-faint);
 }
@@ -665,7 +665,7 @@ button.map__n:focus-visible { outline: 1px solid var(--ink); outline-offset: 2px
 .map__rank__b:focus-visible { outline: 1px solid var(--ink); outline-offset: -1px; }
 .map__rank__b.is-on { border-color: var(--ink-line); background: var(--tint); }
 
-.map__rank__n { flex: 0 0 auto; font-family: var(--serif); font-style: italic; color: var(--ink-faint); }
+.map__rank__n { flex: 0 0 auto; font-family: var(--serif); font-style: var(--slant); color: var(--ink-faint); }
 .map__rank__name { flex: 1 1 auto; min-width: 0; }
 
 .map__gaps { width: 100%; font-size: 0.8rem; line-height: 1.5; color: var(--ink-soft); }

@@ -163,6 +163,18 @@ export function mountMap(options: MapOptions): RouteMap {
   let zoom = 0.62;
   let tx = 0;
   let ty = 0;
+  /**
+   * Cierto cuando ya hay una vista que respetar.
+   *
+   * El mapa se abre y se cierra constantemente —mirar una opción, volver al
+   * documento, regresar—, y reencuadrar en cada apertura tiraba el zoom y el
+   * desplazamiento que la persona acababa de poner. La vista se pierde en cuanto
+   * se va a mirar otra cosa, que es justo cuando molestaría tener que rehacerla.
+   *
+   * Se encuadra solo la primera vez, cuando aún no hay nada que respetar. El
+   * botón «Ajustar a la pantalla» sigue estando para volver al encaje a mano.
+   */
+  let placed = false;
 
   const edges = svg("svg", { class: "map__edges" });
   const nodes = el("div", { class: "map__nodes" });
@@ -793,6 +805,9 @@ export function mountMap(options: MapOptions): RouteMap {
     ));
     tx = (box.width - field.w * zoom) / 2;
     ty = (box.height - field.h * zoom) / 2;
+    // Encuadrar a mano cuenta como vista puesta: si se cierra y se abre, no se
+    // vuelve a encuadrar por detrás de lo que la persona acaba de elegir.
+    placed = true;
     place();
   }
 
@@ -836,6 +851,11 @@ export function mountMap(options: MapOptions): RouteMap {
    * del escenario: el mapa abierto y nada dentro. No se rehace el encaje —si
    * alguien se acercó a leer un nodo, ese acercamiento es suyo— sino que se
    * ata el desplazamiento a que el lienzo siga asomando.
+   *
+   * Cuando el lienzo **cabe** entero no se centra: se respeta la posición.
+   * Centrar aquí se comía el desplazamiento al redimensionar la ventana, porque
+   * `ty = (alto - altoDelGrafo) / 2` ignora en qué punto lo dejó la persona.
+   * Centrar es cosa del encuadre inicial y del botón «Ajustar».
    */
   function clampPan(): void {
     const box = stage.getBoundingClientRect();
@@ -844,12 +864,15 @@ export function mountMap(options: MapOptions): RouteMap {
     const high = field.h * zoom;
     // Cuánto tiene que seguir asomando: un trozo de verdad, no un píxel.
     const keep = 80;
-    tx = wide <= box.width
-      ? (box.width - wide) / 2
-      : Math.min(Math.max(tx, box.width - wide - keep), keep);
-    ty = high <= box.height
-      ? (box.height - high) / 2
-      : Math.min(Math.max(ty, box.height - high - keep), keep);
+    // Si cabe entero, no se toca: la posición que eligió la persona es válida y
+    // recortarla aquí es lo que la devolvía al centro. Sólo cuando **no** cabe
+    // hay algo que corregir: que no se salga del todo por un lado ni por otro.
+    if (wide > box.width) {
+      tx = Math.min(Math.max(tx, box.width - wide - keep), keep);
+    }
+    if (high > box.height) {
+      ty = Math.min(Math.max(ty, box.height - high - keep), keep);
+    }
     place();
   }
 
@@ -861,6 +884,20 @@ export function mountMap(options: MapOptions): RouteMap {
     requestAnimationFrame(() => { clampPan(); });
   });
 
+  /**
+   * Reproduce una vista guardada, sin corregirla.
+   *
+   * Es lo que se usa al reabrir: se deja el lienzo exactamente donde estaba. No
+   * se llama a `clampPan()` aquí, y esa omisión es el arreglo: `clampPan`
+   * re-centra cuando el grafo cabe entero en el escenario —una rama corta, o el
+   * mapa muy alejado—, así que al volver se perdía el desplazamiento y el mapa
+   * saltaba al centro. El encuadre inicial y el botón «Ajustar» siguen centrando,
+   * que es donde centrar es lo correcto.
+   */
+  function restore(): void {
+    place();
+  }
+
   /* --- abrir, cerrar ------------------------------------------------------ */
 
   function open(): void {
@@ -871,8 +908,13 @@ export function mountMap(options: MapOptions): RouteMap {
     failed = "";
     paint();
     // Ajustar después de pintar: antes el escenario no tiene tamaño y el
-    // encaje saldría con las medidas de la pantalla anterior.
-    requestAnimationFrame(() => { fit(); stage.focus(); });
+    // encaje saldría con las medidas de la pantalla anterior. Y solo la primera
+    // vez: después se devuelve la vista tal como se dejó, zoom y posición.
+    requestAnimationFrame(() => {
+      if (!placed) { fit(); placed = true; }
+      else { restore(); }
+      stage.focus();
+    });
   }
 
   function close(): void {

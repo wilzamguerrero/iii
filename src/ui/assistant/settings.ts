@@ -169,6 +169,28 @@ export function mountAiSettings(container: HTMLElement): void {
 
   function buildKeyForm(provider: ProviderId): void {
     const info = builtinInfo(provider);
+
+    // Un nivel gratuito que no tiene credencial no debería enseñar un campo
+    // pidiéndola: es un requisito inventado y quien lo lee se queda buscando una
+    // clave que no existe. Se explica cómo funciona y se deja el campo, opcional,
+    // sólo para quien quiera usar su propia cuenta.
+    if (info?.freeTier) {
+      const lines: HTMLElement[] = [
+        el("p", { class: "pnl__note", text:
+          "No hace falta clave: el nivel gratuito se pide con la credencial pública " +
+          "del proveedor. Elige un modelo y escribe. Si algún día pones una cuenta " +
+          "tuya, pega su clave aquí y mandará la tuya." }),
+      ];
+      if (serverHas(provider)) {
+        lines.push(el("p", { class: "pnl__note", text:
+          "Este servidor tiene una clave configurada y se usará esa." }));
+      }
+      // El campo sigue disponible, pero como opción y no como peaje.
+      lines.push(keyRow(provider));
+      render(credBlock, ...lines);
+      return;
+    }
+
     const lines: HTMLElement[] = [keyRow(provider)];
 
     if (serverHas(provider)) {

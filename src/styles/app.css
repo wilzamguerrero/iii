@@ -14,3 +14,6 @@
 @import "./writer.css";
 @import "./upload.css";
 @import "./indagar.css";
+/* El último, y no por azar: «vivo» corrige a los de arriba, y estar al final
+   es lo que le deja ganar sin subir especificidad ni usar !important. */
+@import "./vivo.css";
