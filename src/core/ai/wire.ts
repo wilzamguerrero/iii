@@ -43,7 +43,7 @@ function ascii(value: string): string {
 export function providerHeaders(provider: ProviderId): Record<string, string> {
   const headers: Record<string, string> = {};
 
-  // `effectiveKey` y no `browserKey`: en el nivel gratuito de OpenCode la clave
+  // `effectiveKey` y no `browserKey`: en un nivel gratuito la clave
   // es la cadena `public`, que nadie escribe. Sin esto el servidor recibía una
   // petición sin credencial y contestaba 401.
   const key = effectiveKey(provider);

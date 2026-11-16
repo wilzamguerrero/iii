@@ -30,10 +30,10 @@
  */
 
 import type { ApiRequest, ApiResponse } from "./_types.ts";
-import { ocServeAvailable } from "./_oc_serve.ts";
 
 /** Los proveedores que trae la aplicación. Los demás los añade la persona. */
-export type BuiltinId = "openrouter" | "nvidia" | "github" | "opencode" | "freepi";
+export type BuiltinId =
+  "freepi" | "openai" | "anthropic" | "openrouter" | "github" | "nvidia";
 
 export interface ProviderSpec {
   id: BuiltinId;
@@ -52,10 +52,8 @@ export interface ProviderSpec {
   /**
    * La credencial que se usa cuando no hay ninguna otra.
    *
-   * OpenCode atiende su nivel gratuito con la cadena literal `public`, que no es
-   * un secreto: es la forma de decir «sin cuenta». Sin esto, la aplicación pedía
-   * una clave que no existe y el proveedor quedaba inservible por un requisito
-   * inventado.
+   * Es la forma de decir «sin cuenta» en los niveles gratuitos que no tienen
+   * credencial. Sin esto, la aplicación pedía una clave que no existe.
    */
   fallbackKey?: string;
   /** Cabeceras fijas que el proveedor pide además del `Bearer`. */
@@ -114,25 +112,35 @@ export const PROVIDERS: Readonly<Record<BuiltinId, ProviderSpec>> = {
     registry: "github-copilot",
   },
   /**
-   * OpenCode, el nivel gratuito de su puerta de inferencia.
+   * La API de OpenAI, con la clave de la persona.
    *
-   * Compatible con OpenAI en la ruta, no en la puerta: exige el cuerpo de su
-   * propio cliente o contesta `429 FreeUsageLimitError` (que no es una cuota
-   * agotada). Todo lo que hay que hacer con el cuerpo y con las cabeceras está
-   * en `_opencode.ts`, y se aplica solo porque el host es `opencode.ai`.
+   * Es el formato de referencia: el cuerpo que manda el cliente ya es el suyo,
+   * así que no hay traducción. `/v1/models` existe y devuelve la lista.
    */
-  opencode: {
-    id: "opencode",
-    label: "OpenCode",
-    chatUrls: ["https://opencode.ai/inference/openai/v1/chat/completions"],
-    // El catálogo vive fuera de la ruta de inferencia: `/inference/v1/models`.
-    modelUrls: ["https://opencode.ai/inference/v1/models"],
-    defaultModel: "deepseek-v4.1-flash-free",
-    envKey: "OPENCODE_API_KEY",
-    // No es un secreto: es cómo se pide el nivel gratuito. Ver el comentario de
-    // `fallbackKey` arriba.
-    fallbackKey: "public",
-    registry: "opencode",
+  openai: {
+    id: "openai",
+    label: "OpenAI",
+    chatUrls: ["https://api.openai.com/v1/chat/completions"],
+    modelUrls: ["https://api.openai.com/v1/models"],
+    defaultModel: "gpt-4o-mini",
+    envKey: "OPENAI_API_KEY",
+    registry: "openai",
+  },
+  /**
+   * La API de Anthropic, con la clave de la persona.
+   *
+   * El cuerpo es distinto —`system` va aparte y `max_tokens` es obligatorio— y
+   * el flujo manda otros eventos, así que pasa por `_anthropic.ts`, que traduce
+   * en los dos sentidos. Se reconoce por el host, igual que free-pi.
+   */
+  anthropic: {
+    id: "anthropic",
+    label: "Anthropic",
+    chatUrls: ["https://api.anthropic.com/v1/messages"],
+    modelUrls: ["https://api.anthropic.com/v1/models"],
+    defaultModel: "claude-sonnet-4-5",
+    envKey: "ANTHROPIC_API_KEY",
+    registry: "anthropic",
   },
   /**
    * free-pi: el backend del CLI ad-supported, OpenAI-compatible.
@@ -508,19 +516,6 @@ export function readTarget(req: ApiRequest, provider: unknown): TargetResult {
   }
   const spec = PROVIDERS[provider as BuiltinId];
 
-  // OpenCode necesita su binario, y un despliegue no puede ejecutarlo: en
-  // Cloudflare un Worker no lanza procesos y no tiene disco donde dejarlo. Se
-  // dice aquí, con el motivo, en vez de dejar que la primera petición falle con
-  // un error de la red del proveedor que no explica nada.
-  if (spec.id === "opencode" && !ocServeAvailable()) {
-    return {
-      ok: false,
-      code: "provider_unavailable",
-      message: "OpenCode necesita su binario y no puede ejecutarse en este despliegue. "
-        + "Funciona en local; en la nube usa otro proveedor.",
-    };
-  }
-
   return {
     ok: true,
     target: {
@@ -568,11 +563,12 @@ export function noStore(res: ApiResponse): void {
 /** Qué claves tiene puestas el servidor. Se dice si hay, nunca cuál. */
 export function configuredProviders(): Record<BuiltinId, boolean> {
   return {
-    openrouter: Boolean(process.env.OPENROUTER_API_KEY),
-    nvidia: Boolean(process.env.NVIDIA_API_KEY),
-    github: Boolean(process.env.GITHUB_AI_TOKEN),
-    opencode: Boolean(process.env.OPENCODE_API_KEY),
     freepi: Boolean(process.env.FREEPI_TOKEN),
+    openai: Boolean(process.env.OPENAI_API_KEY),
+    anthropic: Boolean(process.env.ANTHROPIC_API_KEY),
+    openrouter: Boolean(process.env.OPENROUTER_API_KEY),
+    github: Boolean(process.env.GITHUB_AI_TOKEN),
+    nvidia: Boolean(process.env.NVIDIA_API_KEY),
   };
 }
 
@@ -628,10 +624,9 @@ export async function pipeStream(
   upstream: Response,
   res: ApiResponse,
   /**
-   * Retoque opcional de cada trozo antes de escribirlo. Lo usa OpenCode para
-   * devolver los nombres de herramienta que su puerta obligó a renombrar
-   * (`restoreStreamNames` en `_opencode.ts`). Se aplica al texto ya decodificado
-   * y nunca ve un trozo partido a medias por culpa de un carácter multibyte.
+   * Retoque opcional de cada trozo antes de escribirlo. Se aplica al texto ya
+   * decodificado y nunca ve un trozo partido a medias por culpa de un carácter
+   * multibyte.
    */
   transform?: (text: string) => string,
 ): Promise<void> {

@@ -22,7 +22,6 @@ import {
   type Target,
 } from "./_ai.ts";
 import { registryByApi, registryProvider, type RegistryProvider } from "./_registry.ts";
-import { isOpenCode, openCodeHeaders, resolveOrgId, stripForwardHeaders } from "./_opencode.ts";
 import { freepiCatalog, freepiHeaders, isFreePi } from "./_freepi.ts";
 import { autoOnlyModels, copilotPlan, usableModels } from "./_copilot.ts";
 
@@ -213,11 +212,6 @@ const handler: ApiHandler = async (req, res) => {
     return;
   }
 
-  // En OpenCode el catálogo lleva las mismas cabeceras de identidad que el chat:
-  // su cortafuegos bloquea los UA genéricos —el `undici` que pone Node por
-  // defecto entre ellos— y el camino `/zen` pide además la sesión. Sin esto, el
-  // selector de modelos se queda vacío aunque la clave sea buena.
-  const opencode = isOpenCode(target.modelUrls[0] ?? "");
   // GitHub Copilot anuncia en `/models` todo lo que existe, no lo que el plan
   // incluye: mandar uno de pago contesta `model_not_supported`. El plan, y el
   // host que atiende a esta cuenta, se preguntan antes de creerse la lista.
@@ -225,16 +219,12 @@ const handler: ApiHandler = async (req, res) => {
   // free-pi no tiene `/v1/models` —da 404—: su catálogo sale de `/client-version`,
   // el mismo que usa el CLI para pintar el selector. Además hay que anunciar la
   // identidad, como en el chat (`_freepi.ts`).
-  const freepi = isFreePi(target.chatUrls[0] ?? "");
-  // El workspace, si la clave lo tiene. Sin él el catálogo de OpenCode puede
-  // contestar 401 aunque la clave valga: se resuelve igual que en el chat.
-  const org = opencode && key ? await resolveOrgId(key) : null;
+  const freepi = isFreePi(target.modelUrls[0] ?? "");
   const headers: Record<string, string> = {
-    Accept: "application/json",
     ...authHeaders(key, target),
+    Accept: "application/json",
     ...target.headers,
-    ...(opencode ? stripForwardHeaders({ ...target.extra }) : target.extra),
-    ...(opencode ? openCodeHeaders(target.modelUrls[0] ?? "", key, org) : {}),
+    ...target.extra,
     ...(freepi ? await freepiHeaders(key) : {}),
   };
 

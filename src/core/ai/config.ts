@@ -33,19 +33,17 @@ export interface AiConfig {
 }
 
 /**
- * El proveedor con el que arranca la aplicación: OpenCode.
+ * El proveedor con el que arranca la aplicación: free-pi.
  *
- * Es el que tiene modelos gratuitos de verdad y responde sin que nadie tenga
- * que registrarse en ningún sitio: su nivel gratuito funciona con la clave
- * `public`. Se pone aquí y no en el servidor porque es una preferencia de la
+ * Es el único que se conecta en un paso —un código en GitHub— y no pide
+ * tarjeta. Se pone aquí y no en el servidor porque es una preferencia de la
  * persona: si elige otro, se recuerda el suyo.
  */
-const DEFAULT_PROVIDER: ProviderId = "opencode";
+const DEFAULT_PROVIDER: ProviderId = "freepi";
 
 /**
- * La configuración de partida. Sin claves a propósito: el nivel gratuito de
- * OpenCode no necesita ninguna, y guardar `public` como si fuera una clave hacía
- * que el botón «Quitar» no tuviera nada que quitar.
+ * La configuración de partida. Sin claves a propósito: free-pi se conecta desde
+ * los ajustes y la clave se guarda cuando la hay.
  */
 const EMPTY: AiConfig = {
   provider: DEFAULT_PROVIDER,
@@ -343,9 +341,8 @@ function pickFlags(value: unknown): Partial<Record<BuiltinId, boolean>> {
  * proveedor propio puede no necesitar ninguna —Ollama o LM Studio no la piden—,
  * así que basta con tenerlo dado de alta.
  *
- * Los niveles gratuitos que no tienen credencial —OpenCode con `public`— cuentan
- * como que sí: exigirles una clave era pedir algo que no existe y dejar el
- * proveedor inservible por un requisito inventado.
+ * Los niveles gratuitos que no tienen credencial cuentan como que sí: exigirles
+ * una clave era pedir algo que no existe.
  */
 export function hasCredential(provider: ProviderId = activeProvider()): boolean {
   if (isCustom(provider)) return customProvider(provider) !== null;
@@ -356,8 +353,8 @@ export function hasCredential(provider: ProviderId = activeProvider()): boolean 
 /**
  * La clave con la que se hablará con ese proveedor, si hay alguna.
  *
- * El orden es: la que puso la persona, si no la del nivel gratuito (`public` en
- * OpenCode), y si no nada —el servidor pondrá la suya de su entorno—. Se expone
+ * El orden es: la que puso la persona, si no la del nivel gratuito, y si no
+ * nada —el servidor pondrá la suya de su entorno—. Se expone
  * porque el campo de la clave tiene que poder enseñar cuál se está usando sin
  * que nadie tenga que escribirla.
  */

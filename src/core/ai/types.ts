@@ -9,11 +9,19 @@
  * servidor dejaría de poder poner la suya.
  */
 
-/** Los tres que trae la aplicación. */
-export type BuiltinId = "openrouter" | "nvidia" | "github" | "opencode" | "freepi";
+/** Los proveedores de casa. El orden de `BUILTIN_IDS` es el que se pinta. */
+export type BuiltinId =
+  "freepi" | "openai" | "anthropic" | "openrouter" | "github" | "nvidia";
 
+/**
+ * El orden de la fila de proveedores, y por tanto el del selector.
+ *
+ * free-pi va primero porque es el único que se conecta en un paso y sin clave;
+ * después las dos claves de pago que más se piden (OpenAI y Anthropic); luego
+ * OpenRouter y GitHub Copilot, que traen catálogo amplio; y NVIDIA al final.
+ */
 export const BUILTIN_IDS: readonly BuiltinId[] = [
-  "openrouter", "nvidia", "github", "opencode", "freepi",
+  "freepi", "openai", "anthropic", "openrouter", "github", "nvidia",
 ];
 
 /** Los proveedores propios se identifican así, para no chocar con los de casa. */
@@ -93,10 +101,9 @@ export interface ProviderInfo {
   /**
    * La clave que se usa si la persona no pone ninguna.
    *
-   * Existe porque hay niveles gratuitos que no tienen credencial: OpenCode
-   * atiende con la cadena literal `public`. Sin esto la aplicación pedía una
-   * clave que no existe, y el proveedor quedaba inservible por un requisito
-   * inventado. Si la persona escribe la suya, manda la suya.
+   * Existe porque hay niveles gratuitos que no tienen credencial. Sin esto la
+   * aplicación pedía una clave que no existe. Si la persona escribe la suya,
+   * manda la suya.
    */
   fallbackKey?: string;
   /**
@@ -107,40 +114,6 @@ export interface ProviderInfo {
 }
 
 export const PROVIDERS: Readonly<Record<BuiltinId, ProviderInfo>> = {
-  openrouter: {
-    id: "openrouter",
-    label: "OpenRouter",
-    auth: "key",
-    hint: "Una clave sirve para muchos modelos. Varios son gratuitos.",
-    keyUrl: "https://openrouter.ai/keys",
-    publicCatalog: true,
-  },
-  nvidia: {
-    id: "nvidia",
-    label: "NVIDIA",
-    auth: "key",
-    hint: "Modelos abiertos alojados por NVIDIA, con crédito gratuito de prueba.",
-    keyUrl: "https://build.nvidia.com",
-  },
-  github: {
-    id: "github",
-    label: "GitHub Copilot",
-    auth: "device",
-    hint: "Usa tu cuenta de GitHub. Sin Copilot activo queda el catálogo de GitHub Models.",
-  },
-  opencode: {
-    id: "opencode",
-    label: "OpenCode",
-    // No hay nada que pegar: su nivel gratuito atiende con la cadena `public`.
-    // Se habla con el binario `opencode serve`, que es lo único que su puerta
-    // acepta; ver `api/_oc_serve.ts`.
-    auth: "free",
-    hint: "Nivel gratuito, sin clave ni cuenta: eliges el modelo y ya. La cuota " +
-      "se cuenta por IP. Necesita el binario `opencode` instalado.",
-    keyUrl: "https://opencode.ai/auth",
-    fallbackKey: "public",
-    freeTier: true,
-  },
   freepi: {
     id: "freepi",
     label: "free-pi",
@@ -151,6 +124,41 @@ export const PROVIDERS: Readonly<Record<BuiltinId, ProviderInfo>> = {
     hint: "Modelos gratis con anuncios. Se conecta con GitHub en un paso, sin " +
       "instalar nada; el token dura ~90 días y admite 4 sesiones a la vez.",
     keyUrl: "https://freepi.ai",
+  },
+  openai: {
+    id: "openai",
+    label: "OpenAI",
+    auth: "key",
+    hint: "La API de OpenAI: GPT y los modelos de razonamiento. Se paga por uso.",
+    keyUrl: "https://platform.openai.com/api-keys",
+  },
+  anthropic: {
+    id: "anthropic",
+    label: "Anthropic",
+    auth: "key",
+    hint: "La API de Anthropic: la familia Claude. Se paga por uso.",
+    keyUrl: "https://console.anthropic.com/settings/keys",
+  },
+  openrouter: {
+    id: "openrouter",
+    label: "OpenRouter",
+    auth: "key",
+    hint: "Una clave sirve para muchos modelos. Varios son gratuitos.",
+    keyUrl: "https://openrouter.ai/keys",
+    publicCatalog: true,
+  },
+  github: {
+    id: "github",
+    label: "GitHub Copilot",
+    auth: "device",
+    hint: "Usa tu cuenta de GitHub. Sin Copilot activo queda el catálogo de GitHub Models.",
+  },
+  nvidia: {
+    id: "nvidia",
+    label: "NVIDIA",
+    auth: "key",
+    hint: "Modelos abiertos alojados por NVIDIA, con crédito gratuito de prueba.",
+    keyUrl: "https://build.nvidia.com",
   },
 };
 
