@@ -8,9 +8,14 @@ import {
 import { cachedCatalog, forgetCatalog, listModels } from "../../core/ai/models.ts";
 import { probeChat } from "../../core/ai/chat.ts";
 import { startDeviceFlow, waitForDeviceToken, type DeviceStart } from "../../core/ai/device.ts";
+import {
+  freePiAccount, startFreePiFlow, waitForFreePiToken, type FreePiAccount,
+  type FreePiStart,
+} from "../../core/ai/freepiDevice.ts";
 import { loadDirectory, type DirectoryEntry } from "../../core/ai/registry.ts";
 import {
-  builtinInfo, isBuiltin, isCustom, type AiModel, type CustomProvider, type ProviderId,
+  builtinInfo, isBuiltin, isCustom, type AiModel, type BuiltinId, type CustomProvider,
+  type ProviderId,
 } from "../../core/ai/types.ts";
 
 /**
@@ -677,57 +682,202 @@ export function mountAiSettings(container: HTMLElement): void {
     });
   }
 
-  /* --- alta por dispositivo (GitHub) -------------------------------------- */
+  /* --- alta por dispositivo (GitHub, y free-pi por la misma vía) ---------- */
 
-  function buildDeviceForm(): void {
-    const saved = browserKey("github");
+  /**
+   * Los dos proveedores con alta por dispositivo, con lo que cambia entre ellos.
+   *
+   * Son el mismo baile —código, enlace, espera— con otra puerta: GitHub habla
+   * directo con `github.com` para Copilot, y free-pi pasa por su backend para
+   * entregar un JWT suyo. La forma es idéntica, así que el código también.
+   */
+  interface DeviceKind {
+    /** Con qué se queda el token en los ajustes. */
+    provider: BuiltinId;
+    /** «GitHub» o «free-pi», para los textos. */
+    label: string;
+    /** El destino real del login, que se enseña en el botón. */
+    host: string;
+    /** El aviso largo que hay que aceptar, si el proveedor lo exige. */
+    consent: string;
+    start: (signal?: AbortSignal) => Promise<DeviceStart>;
+    /** El enlace del paso 2, cuando el `start` no lo trae ya armado. */
+    link?: (start: DeviceStart) => string;
+    wait: (start: DeviceStart, signal?: AbortSignal) => Promise<{ token: string; days: number | null }>;
+    /** Quién es el token, cuando el proveedor lo puede decir. */
+    who?: (token: string) => Promise<DeviceIdentity | null>;
+  }
+
+  /** Lo que se enseña de la cuenta conectada. */
+  interface DeviceIdentity {
+    /** «wzgunicesmag», para «Conectado como @…». */
+    handle: string;
+    /** Los créditos del día, ya formateados, o "". */
+    credits: string;
+    /** Días que le quedan al token, si se saben. */
+    days: number | null;
+  }
+
+  /**
+   * Identidades ya resueltas, por token. El panel se repinta al cambiar de
+   * modelo y no hay razón para preguntar a free-pi cada vez quién eres.
+   */
+  const identities = new Map<string, DeviceIdentity>();
+
+  function identityFrom(me: FreePiAccount | null): DeviceIdentity | null {
+    if (!me || !me.handle) return null;
+    const credits = me.remainingCredits !== null && me.allowanceCredits !== null
+      ? `${me.remainingCredits.toLocaleString("es")} de ${me.allowanceCredits.toLocaleString("es")} créditos hoy`
+      : me.remainingCredits !== null
+        ? `${me.remainingCredits.toLocaleString("es")} créditos hoy`
+        : "";
+    return { handle: me.handle, credits, days: me.days };
+  }
+
+  const deviceKinds: Record<string, DeviceKind> = {
+    github: {
+      provider: "github",
+      label: "GitHub",
+      host: "github.com/login/device",
+      consent: "",
+      start: startDeviceFlow,
+      wait: async (start, signal) => ({
+        token: await waitForDeviceToken(start, signal),
+        days: null,
+      }),
+    },
+    freepi: {
+      provider: "freepi",
+      label: "free-pi",
+      host: "github.com/login/device",
+      consent: "",
+      start: async (signal) => toFreePiStart(await startFreePiFlow(signal)),
+      link: (start) => freePiStarts.get(start)?.verificationUriComplete ?? start.verificationUri,
+      wait: async (start, signal) => {
+        const real = freePiStarts.get(start);
+        if (!real) throw new Error("Se perdió la sesión de free-pi. Empieza otra vez.");
+        const result = await waitForFreePiToken(real, signal);
+        return { token: result.token, days: result.days };
+      },
+      who: async (token) => identityFrom(await freePiAccount(token)),
+    },
+  };
+
+  /**
+   * El arranque de free-pi se guarda aparte porque su `wait` necesita el texto
+   * del consentimiento además del código. Se pega por referencia: el mismo
+   * objeto viaja del `start` al `wait`.
+   */
+  const freePiStarts = new WeakMap<DeviceStart, FreePiStart>();
+
+  function toFreePiStart(real: FreePiStart): DeviceStart {
+    const shape: DeviceStart = {
+      deviceCode: real.sessionId,
+      userCode: real.userCode,
+      verificationUri: real.verificationUriComplete || real.verificationUri,
+      expiresIn: real.expiresIn,
+      interval: real.interval,
+    };
+    freePiStarts.set(shape, real);
+    return shape;
+  }
+
+  /** Quién se está conectando ahora: `github` o `freepi`. */
+  let deviceProvider: BuiltinId = "github";
+
+  function buildDeviceForm(which: BuiltinId = deviceProvider): void {
+    deviceProvider = which;
+    const kind = deviceKinds[which];
+    if (!kind) { buildKeyForm(which); return; }
+
+    const saved = browserKey(which);
 
     if (saved) {
+      const known = identities.get(saved) ?? null;
+      const who = el("p", {
+        class: "pnl__note",
+        text: known?.handle
+          ? `Conectado como @${known.handle} en este navegador.`
+          : `Cuenta de ${kind.label} conectada en este navegador.`,
+      });
+
+      const detail = el("p", { class: "pnl__note" });
+      if (known) {
+        const bits: string[] = [];
+        if (known.credits) bits.push(known.credits);
+        if (known.days !== null) bits.push(`el token caduca en ~${known.days} días`);
+        detail.textContent = bits.join(" · ");
+      }
+
       render(credBlock,
         el("div", { class: "pnl__row" }, [
-          el("p", { class: "pnl__note", text: "Cuenta de GitHub conectada en este navegador." }),
+          who,
           el("button", {
             class: "btn btn--quiet",
             text: "Desconectar",
             attrs: { type: "button" },
             on: {
               click: () => {
-                clearKey("github");
-                say("Cuenta desconectada de este navegador.");
+                identities.delete(saved);
+                clearKey(which);
+                say(`Cuenta de ${kind.label} desconectada de este navegador.`);
               },
             },
           }),
         ]),
+        detail,
       );
-      if (serverHas("github")) {
+      if (serverHas(which)) {
         credBlock.append(el("p", { class: "pnl__note", text:
           "El servidor también tiene un token configurado; se usa el tuyo." }));
+      }
+
+      // El nombre no vino con el token: se pregunta una vez y se repinta.
+      if (!known && kind.who) {
+        detail.textContent = "Averiguando con qué cuenta…";
+        void kind.who(saved).then((identity) => {
+          if (!identity) {
+            detail.textContent = "No se pudo averiguar la cuenta; el token puede estar caducado.";
+            return;
+          }
+          identities.set(saved, identity);
+          // Sólo se repinta si seguimos en este proveedor y con el mismo token.
+          if (deviceProvider === which && browserKey(which) === saved) buildDeviceForm(which);
+        }).catch(() => {
+          detail.textContent = "No se pudo averiguar la cuenta.";
+        });
       }
       return;
     }
 
     const connect = el("button", {
       class: "btn",
-      text: "Conectar con GitHub",
+      text: `Conectar con ${kind.label}`,
       attrs: { type: "button" },
       on: { click: () => { void begin(); } },
     });
 
     const lines: HTMLElement[] = [el("div", { class: "pnl__row" }, [connect])];
-    if (serverHas("github")) {
+    if (serverHas(which)) {
       lines.push(el("p", { class: "pnl__note", text:
         "Este servidor ya tiene un token configurado: puedes usar la IA sin conectar tu cuenta." }));
     }
     lines.push(el("p", { class: "pnl__note", text:
-      "Aparecerá un código de ocho caracteres para escribirlo en github.com. " +
-      "No hay que registrar ninguna aplicación ni pegar ninguna clave." }));
+      "Aparecerá un código para escribirlo en github.com. No hay que registrar " +
+      "ninguna aplicación ni instalar nada." }));
 
     render(credBlock, ...lines);
   }
 
   /** El código, el enlace y la espera. Cancelar aborta el sondeo. */
   function showCode(start: DeviceStart, controller: AbortController): void {
-    render(credBlock,
+    const kind = deviceKinds[deviceProvider]!;
+    const real = freePiStarts.get(start);
+    const link = kind.link ? kind.link(start) : start.verificationUri;
+    // El aviso sale del arranque de free-pi; el de GitHub no tiene.
+    const consent = real?.consentText || "";
+
+    const parts: HTMLElement[] = [
       el("p", { class: "pnl__note", text: "Escribe este código en GitHub:" }),
       el("div", { class: "pnl__row" }, [
         el("code", { class: "pin", text: start.userCode }),
@@ -746,41 +896,77 @@ export function mountAiSettings(container: HTMLElement): void {
           },
         }),
       ]),
+    ];
+
+    // El aviso de free-pi no es un adorno: es lo que se acepta al continuar.
+    if (consent) {
+      parts.push(el("p", { class: "pnl__note", text: "Al conectar aceptas esto:" }));
+      parts.push(el("p", {
+        class: "pnl__note",
+        // El aviso se distingue del texto de ayuda: es lo que se firma.
+        attrs: { style: "color: var(--ink); white-space: pre-line" },
+        text: consent,
+      }));
+    }
+
+    parts.push(
       el("div", { class: "pnl__row" }, [
         el("a", {
           class: "btn",
-          text: "Abrir github.com/login/device",
-          attrs: { href: start.verificationUri, target: "_blank", rel: "noopener noreferrer" },
+          text: `Abrir ${kind.host}`,
+          attrs: { href: link, target: "_blank", rel: "noopener noreferrer" },
         }),
         el("button", {
           class: "btn btn--quiet",
           text: "Cancelar",
           attrs: { type: "button" },
-          on: { click: () => { controller.abort(); buildDeviceForm(); say("Conexión cancelada."); } },
+          on: {
+            click: () => {
+              controller.abort();
+              buildDeviceForm(deviceProvider);
+              say("Conexión cancelada.");
+            },
+          },
         }),
       ]),
       el("p", { class: "pnl__note", text: "Esperando a que autorices…" }),
     );
+
+    render(credBlock, ...parts);
   }
 
   async function begin(): Promise<void> {
     waiting?.abort();
     const controller = new AbortController();
     waiting = controller;
-    say("Pidiendo el código a GitHub…");
+    const kind = deviceKinds[deviceProvider]!;
+    say(`Pidiendo el código a ${kind.label}…`);
 
     try {
-      const start = await startDeviceFlow(controller.signal);
+      const start = await kind.start(controller.signal);
       showCode(start, controller);
-      const token = await waitForDeviceToken(start, controller.signal);
+      const result = await kind.wait(start, controller.signal);
       if (controller.signal.aborted) return;
       // Guardarlo dispara `aiConfig`, que repinta este panel ya conectado.
-      setKey("github", token);
-      say("Cuenta de GitHub conectada.");
+      setKey(kind.provider, result.token);
+
+      // El nombre se pide después de guardar: si tarda o falla, ya está
+      // conectado y el aviso de abajo lo dirá sin la cuenta.
+      let handle = "";
+      if (kind.who) {
+        const identity = await kind.who(result.token).catch(() => null);
+        if (identity) {
+          identities.set(result.token, identity);
+          handle = identity.handle ? ` como @${identity.handle}` : "";
+        }
+      }
+
+      const extra = result.days !== null ? ` Caduca en ~${result.days} días.` : "";
+      say(`Cuenta de ${kind.label} conectada${handle}.${extra}`);
     } catch (error) {
       if (controller.signal.aborted) return;
-      buildDeviceForm();
-      say(error instanceof Error ? error.message : "No se pudo conectar con GitHub.", true);
+      buildDeviceForm(deviceProvider);
+      say(error instanceof Error ? error.message : `No se pudo conectar con ${kind.label}.`, true);
     }
   }
 
@@ -1110,7 +1296,7 @@ export function mountAiSettings(container: HTMLElement): void {
       ? info.hint
       : `API con el formato de OpenAI en ${entry ? shortUrl(entry.baseUrl) : "…"}.`;
 
-    if (info?.auth === "device") buildDeviceForm();
+    if (info?.auth === "device") buildDeviceForm(info.id);
     else if (info) buildKeyForm(provider);
     // Al no existir, `buildCustomForm` ya ha cambiado de proveedor y este
     // pintado sobra: seguir dejaría el catálogo del que se acaba de quitar.

@@ -36,6 +36,7 @@ import aiChat from "../../api/ai-chat.ts";
 import aiModels from "../../api/ai-models.ts";
 import aiRegistry from "../../api/ai-registry.ts";
 import githubDevice from "../../api/github-device.ts";
+import freepiDevice from "../../api/freepi-device.ts";
 import health from "../../api/health.ts";
 import notion from "../../api/notion.ts";
 import notionOauth from "../../api/notion-oauth.ts";
@@ -47,6 +48,7 @@ const HANDLERS: Readonly<Record<string, ApiHandler>> = {
   "ai-models": aiModels,
   "ai-registry": aiRegistry,
   "github-device": githubDevice,
+  "freepi-device": freepiDevice,
   health,
   notion,
   "notion-oauth": notionOauth,

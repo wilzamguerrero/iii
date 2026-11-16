@@ -144,9 +144,12 @@ export const PROVIDERS: Readonly<Record<BuiltinId, ProviderInfo>> = {
   freepi: {
     id: "freepi",
     label: "free-pi",
-    auth: "key",
-    hint: "El backend del CLI ad-supported free-pi. No es una clave: es el token " +
-      "del login con GitHub, que caduca a los ~90 días. Admite 4 sesiones a la vez.",
+    // El alta es la de GitHub, pero orquestada por free-pi: su backend da el
+    // código y entrega un JWT suyo. No hace falta instalar su CLI; ver
+    // `api/_freepi_device.ts` y `src/core/ai/freepiDevice.ts`.
+    auth: "device",
+    hint: "Modelos gratis con anuncios. Se conecta con GitHub en un paso, sin " +
+      "instalar nada; el token dura ~90 días y admite 4 sesiones a la vez.",
     keyUrl: "https://freepi.ai",
   },
 };
